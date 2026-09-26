@@ -30,3 +30,11 @@ dependencies {
 
     testImplementation(kotlin("test"))
 }
+
+tasks.register<JavaExec>("authLoginProbe") {
+    group = "verification"
+    description = "Runs the interactive YouTube Music login probe and saves the validated session with DPAPI."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.metrolist.desktop.auth.AuthLoginProbeMainKt")
+    args(rootProject.projectDir.absolutePath)
+}
