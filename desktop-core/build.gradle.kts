@@ -61,3 +61,15 @@ tasks.register<JavaExec>("byteIntegrity") {
 tasks.withType<Test>().configureEach {
     systemProperty("java.io.tmpdir", layout.buildDirectory.dir("tmp").get().asFile.absolutePath)
 }
+
+
+tasks.register<JavaExec>("mpvSmoke") {
+    group = "verification"
+    description = "Runs a silent libmpv smoke test against one local media file."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.metrolist.desktop.player.MpvSmokeMainKt")
+    args(
+        providers.gradleProperty("mpvDll").get(),
+        providers.gradleProperty("mediaFile").get(),
+    )
+}
