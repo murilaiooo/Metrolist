@@ -46,3 +46,11 @@ tasks.register<JavaExec>("streamProbe") {
     mainClass.set("com.metrolist.desktop.stream.StreamProbeMainKt")
     args(providers.gradleProperty("videoId").orElse("WcHpojJz8Bc").get())
 }
+
+tasks.register<JavaExec>("byteIntegrity") {
+    group = "verification"
+    description = "Checks byte-level integrity for one media item."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.metrolist.desktop.media.CompatibilityProbeMainKt")
+    args(providers.gradleProperty("videoId").orElse("WcHpojJz8Bc").get())
+}
