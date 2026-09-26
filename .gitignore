@@ -117,3 +117,15 @@ app/src/main/cpp/coverart/
 .cortexkit
 .mcp.json
 *.har
+
+# MetroList Windows local/runtime artifacts
+.worktrees/
+.superpowers/
+*.metrolistbackup
+*.metrolistbackup.part
+runtime-data/
+downloads/
+artwork-cache/
+desktop-auth-helper/bin/
+desktop-auth-helper/obj/
+scripts/mpv/runtime/

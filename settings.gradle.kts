@@ -40,3 +40,6 @@ dependencyResolutionManagement {
 rootProject.name = "Metrolist"
 include(":app")
 include(":innertube")
+include(":desktop-core")
+include(":desktop-export")
+include(":desktop-app")
