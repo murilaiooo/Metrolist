@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 data class AccountState(
+    val loading: Boolean = true,
     val signedIn: Boolean = false,
     val name: String? = null,
     val email: String? = null,
@@ -45,9 +46,15 @@ class DesktopRuntime private constructor(
     val playerState: StateFlow<PlayerState>? = player?.state
 
     suspend fun initializeSession() {
+        mutableAccount.value =
+            mutableAccount.value.copy(
+                loading = true,
+                error = null,
+            )
+
         val saved = sessionStore.load()
         if (saved == null) {
-            mutableAccount.value = AccountState()
+            mutableAccount.value = AccountState(loading = false)
             return
         }
 
@@ -56,6 +63,7 @@ class DesktopRuntime private constructor(
         }.onSuccess { validated ->
             mutableAccount.value =
                 AccountState(
+                    loading = false,
                     signedIn = true,
                     name = validated.session.accountName,
                     email = validated.session.accountEmail,
@@ -63,6 +71,7 @@ class DesktopRuntime private constructor(
         }.onFailure { error ->
             mutableAccount.value =
                 AccountState(
+                    loading = false,
                     signedIn = false,
                     error = error.message ?: error::class.simpleName,
                 )
@@ -70,34 +79,39 @@ class DesktopRuntime private constructor(
     }
 
     suspend fun loginInteractive() {
-        val helperProject =
-            projectRoot
-                .resolve("desktop-auth-helper")
-                .resolve("Metrolist.AuthHelper.csproj")
-
-        val session =
-            AuthHelperLauncher(
-                command =
-                    listOf(
-                        "dotnet",
-                        "run",
-                        "--project",
-                        helperProject.toString(),
-                        "--no-build",
-                        "--",
-                    ),
-                workingDirectory = projectRoot,
-            ).login()
-
-        val validated = AuthSessionValidator().validate(session)
-        sessionStore.save(validated.session)
-
         mutableAccount.value =
-            AccountState(
-                signedIn = true,
-                name = validated.session.accountName,
-                email = validated.session.accountEmail,
+            mutableAccount.value.copy(
+                loading = true,
+                error = null,
             )
+
+        try {
+            val helperCommand = authHelperCommand(projectRoot)
+            val session =
+                AuthHelperLauncher(
+                    command = helperCommand,
+                    workingDirectory = projectRoot,
+                ).login()
+
+            val validated = AuthSessionValidator().validate(session)
+            sessionStore.save(validated.session)
+
+            mutableAccount.value =
+                AccountState(
+                    loading = false,
+                    signedIn = true,
+                    name = validated.session.accountName,
+                    email = validated.session.accountEmail,
+                )
+        } catch (error: Throwable) {
+            mutableAccount.value =
+                AccountState(
+                    loading = false,
+                    signedIn = false,
+                    error = error.message ?: error::class.simpleName,
+                )
+            throw error
+        }
     }
 
     fun logout() {
@@ -106,7 +120,7 @@ class DesktopRuntime private constructor(
         YouTube.visitorData = ""
         YouTube.dataSyncId = ""
         YouTube.authUser = "0"
-        mutableAccount.value = AccountState()
+        mutableAccount.value = AccountState(loading = false)
     }
 
     fun enqueue(song: SongItem) {
@@ -163,7 +177,7 @@ class DesktopRuntime private constructor(
     }
 
     companion object {
-        suspend fun open(projectRoot: Path): DesktopRuntime {
+        fun open(projectRoot: Path): DesktopRuntime {
             val localAppData =
                 requireNotNull(System.getenv("LOCALAPPDATA")) {
                     "LOCALAPPDATA is not available"
@@ -201,14 +215,16 @@ class DesktopRuntime private constructor(
                 locateMpvDll(projectRoot)
             val player =
                 mpvDll?.let {
-                    MpvPlayer(
-                        sourceSelector =
-                            PlayerSourceSelector(
-                                store = offlineStore,
-                                resolver = resolver::resolve,
-                            ),
-                        backend = LibMpvBackend(it),
-                    )
+                    runCatching {
+                        MpvPlayer(
+                            sourceSelector =
+                                PlayerSourceSelector(
+                                    store = offlineStore,
+                                    resolver = resolver::resolve,
+                                ),
+                            backend = LibMpvBackend(it),
+                        )
+                    }.getOrNull()
                 }
 
             return DesktopRuntime(
@@ -219,9 +235,7 @@ class DesktopRuntime private constructor(
                 resolver = resolver,
                 queue = queue,
                 player = player,
-            ).also {
-                it.initializeSession()
-            }
+            )
         }
 
         private fun locateMpvDll(projectRoot: Path): Path? {
@@ -233,6 +247,14 @@ class DesktopRuntime private constructor(
 
             if (explicit != null) return explicit
 
+            val packaged =
+                applicationResourcesDir()
+                    ?.resolve("mpv")
+                    ?.resolve("libmpv-2.dll")
+                    ?.takeIf(Files::exists)
+
+            if (packaged != null) return packaged
+
             val development =
                 projectRoot
                     .resolve("runtime-dev")
@@ -243,5 +265,37 @@ class DesktopRuntime private constructor(
 
             return development.takeIf(Files::exists)
         }
+
+        private fun authHelperCommand(projectRoot: Path): List<String> {
+            val packaged =
+                applicationResourcesDir()
+                    ?.resolve("auth-helper")
+                    ?.resolve("Metrolist.AuthHelper.exe")
+                    ?.takeIf(Files::exists)
+
+            if (packaged != null) {
+                return listOf(packaged.toString())
+            }
+
+            val helperProject =
+                projectRoot
+                    .resolve("desktop-auth-helper")
+                    .resolve("Metrolist.AuthHelper.csproj")
+
+            return listOf(
+                "dotnet",
+                "run",
+                "--project",
+                helperProject.toString(),
+                "--no-build",
+                "--",
+            )
+        }
+
+        private fun applicationResourcesDir(): Path? =
+            System.getProperty("compose.application.resources.dir")
+                ?.takeIf(String::isNotBlank)
+                ?.let(Path::of)
+                ?.takeIf(Files::exists)
     }
 }

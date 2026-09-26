@@ -1,3 +1,5 @@
+import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+
 plugins {
     kotlin("jvm")
     alias(libs.plugins.compose.multiplatform)
@@ -21,6 +23,25 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.metrolist.desktop.MainKt"
+
+        nativeDistributions {
+            targetFormats(TargetFormat.Msi)
+            packageName = "MetroListWindows"
+            packageVersion = "0.1.0"
+            vendor = "MetroList Windows"
+
+            appResourcesRootDir.set(
+                rootProject.layout.projectDirectory.dir(
+                    "runtime-dev/package-resources-current",
+                ),
+            )
+
+            windows {
+                menuGroup = "MetroList Windows"
+                shortcut = true
+                dirChooser = true
+            }
+        }
     }
 }
 

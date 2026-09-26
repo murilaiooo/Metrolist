@@ -68,6 +68,10 @@ fun MetroListDesktopApp(
         }
     }
 
+    LaunchedEffect(Unit) {
+        runtime.initializeSession()
+    }
+
     LaunchedEffect(account.signedIn) {
         if (account.signedIn) {
             appState.loadInitial()
@@ -76,7 +80,25 @@ fun MetroListDesktopApp(
 
     MaterialTheme {
         Surface(Modifier.fillMaxSize()) {
-            if (!account.signedIn) {
+            if (account.loading) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(48.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        "MetroList Windows",
+                        style = MaterialTheme.typography.headlineLarge,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("Checking your YouTube Music session...")
+                    Spacer(Modifier.height(16.dp))
+                    LinearProgressIndicator(Modifier.width(280.dp))
+                }
+            } else if (!account.signedIn) {
                 LoginPanel(
                     accountError = account.error,
                     onLogin = {
