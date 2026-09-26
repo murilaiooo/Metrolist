@@ -14,9 +14,22 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 import java.nio.file.Path
+import kotlin.system.exitProcess
 
-fun main() {
+fun main(args: Array<String>) {
     val projectRoot = Path.of(System.getProperty("user.dir"))
+
+    if ("--startup-check" in args) {
+        val report = StartupChecks.forCurrentInstall(projectRoot).run()
+        report.checks.forEach { check ->
+            println(
+                "STARTUP_CHECK " + check.name + "=" +
+                    if (check.ok) "OK" else "FAIL",
+            )
+        }
+        println("STARTUP_CHECK_RESULT=" + if (report.healthy) "OK" else "FAIL")
+        exitProcess(if (report.healthy) 0 else 2)
+    }
     val runtimeResult = runCatching {
         DesktopRuntime.open(projectRoot)
     }

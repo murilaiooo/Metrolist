@@ -26,6 +26,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
+            modules("java.sql")
             packageName = "MetroListWindows"
             packageVersion = "0.1.0"
             vendor = "MetroList Windows"

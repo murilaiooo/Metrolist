@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Web.WebView2.Core;
 
 namespace Metrolist.AuthHelper;
 
@@ -10,6 +11,11 @@ internal static class Program
         if (args.Contains("--self-test", StringComparer.Ordinal))
         {
             return AuthProtocol.SelfTest();
+        }
+
+        if (args.Contains("--runtime-check", StringComparer.Ordinal))
+        {
+            return CheckWebView2Runtime();
         }
 
         ApplicationConfiguration.Initialize();
@@ -32,5 +38,26 @@ internal static class Program
 
         Console.Out.WriteLine(json);
         return 0;
+    }
+
+    private static int CheckWebView2Runtime()
+    {
+        try
+        {
+            var version = CoreWebView2Environment.GetAvailableBrowserVersionString();
+            if (string.IsNullOrWhiteSpace(version))
+            {
+                Console.Error.WriteLine("WEBVIEW2_RUNTIME_MISSING");
+                return 2;
+            }
+
+            Console.Out.WriteLine("WEBVIEW2_RUNTIME_OK");
+            return 0;
+        }
+        catch
+        {
+            Console.Error.WriteLine("WEBVIEW2_RUNTIME_MISSING");
+            return 2;
+        }
     }
 }
