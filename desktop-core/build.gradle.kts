@@ -27,6 +27,8 @@ dependencies {
     implementation(libs.ktor.client.encoding)
     implementation(libs.jna)
     implementation(libs.jna.platform)
+    implementation(libs.coroutines.core)
+    implementation(libs.sqlite.jdbc)
 
     testImplementation(kotlin("test"))
 }
@@ -53,4 +55,9 @@ tasks.register<JavaExec>("byteIntegrity") {
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.metrolist.desktop.media.CompatibilityProbeMainKt")
     args(providers.gradleProperty("videoId").orElse("WcHpojJz8Bc").get())
+}
+
+
+tasks.withType<Test>().configureEach {
+    systemProperty("java.io.tmpdir", layout.buildDirectory.dir("tmp").get().asFile.absolutePath)
 }

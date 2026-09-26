@@ -129,3 +129,6 @@ artwork-cache/
 desktop-auth-helper/bin/
 desktop-auth-helper/obj/
 scripts/mpv/runtime/
+
+# MetroList Windows development runtime
+runtime-dev/

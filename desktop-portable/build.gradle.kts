@@ -24,3 +24,12 @@ tasks.register<JavaExec>("portableProbe") {
         ).get(),
     )
 }
+
+
+tasks.register<JavaExec>("queueExportProbe") {
+    group = "verification"
+    description = "Runs a real persistent queue -> SQLite -> export compatibility probe."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.metrolist.desktop.portable.QueueExportProbeMainKt")
+    args(rootProject.projectDir.parentFile.parentFile.absolutePath)
+}

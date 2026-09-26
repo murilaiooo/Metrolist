@@ -23,48 +23,69 @@ class ValidatedMediaWriter {
         val temporary = destination.resolveSibling(destination.fileName.toString() + ".part")
         Files.deleteIfExists(temporary)
 
-        val digest = MessageDigest.getInstance("SHA-256")
-        var total = 0L
-
         try {
             Files.newOutputStream(temporary).use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                while (true) {
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (count == 0) continue
-
-                    output.write(buffer, 0, count)
-                    digest.update(buffer, 0, count)
-                    total += count
-                }
+                input.copyTo(output)
             }
-
-            if (expectedLength != null) {
-                check(total == expectedLength) {
-                    "Media length mismatch: expected=$expectedLength actual=$total"
-                }
-            }
-
-            try {
-                Files.move(
-                    temporary,
-                    destination,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING)
-            }
-
-            return WrittenMedia(
-                path = destination,
-                bytes = total,
-                sha256 = digest.digest().joinToString("") { "%02x".format(it) },
+            return promoteExisting(
+                temporary = temporary,
+                destination = destination,
+                expectedLength = expectedLength,
             )
         } catch (error: Exception) {
             Files.deleteIfExists(temporary)
             throw error
         }
+    }
+
+    fun promoteExisting(
+        temporary: Path,
+        destination: Path,
+        expectedLength: Long?,
+    ): WrittenMedia {
+        destination.parent?.let(Files::createDirectories)
+
+        val total = Files.size(temporary)
+        if (expectedLength != null) {
+            check(total == expectedLength) {
+                "Media length mismatch: expected=$expectedLength actual=$total"
+            }
+        }
+
+        val sha256 = Files.newInputStream(temporary).use(::sha256)
+
+        try {
+            Files.move(
+                temporary,
+                destination,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(
+                temporary,
+                destination,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        }
+
+        return WrittenMedia(
+            path = destination,
+            bytes = total,
+            sha256 = sha256,
+        )
+    }
+
+    private fun sha256(input: InputStream): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            if (count > 0) digest.update(buffer, 0, count)
+        }
+
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 }
