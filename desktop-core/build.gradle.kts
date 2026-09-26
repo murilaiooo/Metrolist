@@ -38,3 +38,11 @@ tasks.register<JavaExec>("authLoginProbe") {
     mainClass.set("com.metrolist.desktop.auth.AuthLoginProbeMainKt")
     args(rootProject.projectDir.absolutePath)
 }
+
+tasks.register<JavaExec>("streamProbe") {
+    group = "verification"
+    description = "Resolves one sanitized HIGH-quality audio stream."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.metrolist.desktop.stream.StreamProbeMainKt")
+    args(providers.gradleProperty("videoId").orElse("WcHpojJz8Bc").get())
+}
