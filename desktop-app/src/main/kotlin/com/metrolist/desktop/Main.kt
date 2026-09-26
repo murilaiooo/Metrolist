@@ -30,6 +30,25 @@ fun main(args: Array<String>) {
         println("STARTUP_CHECK_RESULT=" + if (report.healthy) "OK" else "FAIL")
         exitProcess(if (report.healthy) 0 else 2)
     }
+
+    if ("--runtime-open-check" in args) {
+        val result =
+            runCatching {
+                DesktopRuntime.open(projectRoot).use { }
+            }
+        result.onSuccess {
+            println("RUNTIME_OPEN_CHECK=OK")
+        }.onFailure { error ->
+            println(
+                "RUNTIME_OPEN_CHECK=FAIL " +
+                    error::class.qualifiedName +
+                    " " +
+                    error.message.orEmpty(),
+            )
+        }
+        exitProcess(if (result.isSuccess) 0 else 3)
+    }
+
     val runtimeResult = runCatching {
         DesktopRuntime.open(projectRoot)
     }
@@ -69,11 +88,15 @@ fun main(args: Array<String>) {
                                 style = MaterialTheme.typography.headlineLarge,
                             )
                             Text("The app could not initialize.")
+                            val startupError = runtimeResult.exceptionOrNull()
                             Text(
-                                runtimeResult.exceptionOrNull()
+                                startupError
                                     ?.let { it::class.simpleName }
                                     ?: "Unknown startup error",
                             )
+                            startupError?.message?.takeIf(String::isNotBlank)?.let { message ->
+                                Text(message)
+                            }
                         }
                     }
                 }

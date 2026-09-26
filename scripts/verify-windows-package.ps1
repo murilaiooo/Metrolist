@@ -30,6 +30,11 @@ if ($Process.ExitCode -ne 0) {
     throw "MetroList Windows startup check failed with exit code $($Process.ExitCode)."
 }
 
+$RuntimeProcess = Start-Process -FilePath $Exe -ArgumentList '--runtime-open-check' -PassThru -Wait
+if ($RuntimeProcess.ExitCode -ne 0) {
+    throw "MetroList Windows runtime-open check failed with exit code $($RuntimeProcess.ExitCode)."
+}
+
 Write-Output 'WINDOWS_PACKAGE_VERIFY_OK'
 Write-Output ('PACKAGE_ROOT=' + $PackageRoot)
 Write-Output ('MPV_SHA256=' + (Get-FileHash $Mpv -Algorithm SHA256).Hash.ToLowerInvariant())
