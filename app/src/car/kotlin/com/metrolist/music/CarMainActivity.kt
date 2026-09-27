@@ -1,12 +1,83 @@
 package com.metrolist.music
 
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.lifecycle.lifecycleScope
+import com.metrolist.music.car.input.CarInputDecision
+import com.metrolist.music.car.input.CarInputDiagnostics
+import com.metrolist.music.car.input.CarInputRouter
+import com.metrolist.music.car.input.CarKeySignature
+import com.metrolist.music.car.input.CarMediaAction
+import com.metrolist.music.car.ui.CarApp
+import com.metrolist.music.car.ui.CarPlayerConnectionHost
+import com.metrolist.music.db.MusicDatabase
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class CarMainActivity : ComponentActivity() {
+    @Inject
+    lateinit var database: MusicDatabase
+
+    private lateinit var playerHost: CarPlayerConnectionHost
+    private val inputRouter = CarInputRouter()
+    internal val inputDiagnostics = CarInputDiagnostics()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        playerHost =
+            CarPlayerConnectionHost(
+                context = this,
+                database = database,
+                scope = lifecycleScope,
+            )
+
+        setContent {
+            CarApp(connectionFlow = playerHost.connection)
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        playerHost.start()
+    }
+
+    override fun onDestroy() {
+        playerHost.dispose()
+        super.onDestroy()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val signature =
+            CarKeySignature(
+                keyCode = event.keyCode,
+                scanCode = event.scanCode,
+                source = event.source,
+            )
+        val decision = inputRouter.decide(signature, event.action)
+        inputDiagnostics.record(signature, event.action, decision)
+
+        if (decision.consume) {
+            dispatchConfirmedVendorAction(decision)
+            return true
+        }
+
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun dispatchConfirmedVendorAction(decision: CarInputDecision) {
+        val connection = playerHost.connection.value ?: return
+        when (decision.action) {
+            CarMediaAction.PLAY -> connection.play()
+            CarMediaAction.PAUSE -> connection.pause()
+            CarMediaAction.PLAY_PAUSE -> connection.togglePlayPause()
+            CarMediaAction.NEXT -> connection.seekToNext()
+            CarMediaAction.PREVIOUS -> connection.seekToPrevious()
+            CarMediaAction.STOP -> connection.pause()
+            null -> Unit
+        }
     }
 }
