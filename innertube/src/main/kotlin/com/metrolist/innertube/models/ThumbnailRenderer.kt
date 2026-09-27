@@ -1,4 +1,4 @@
-package com.metrolist.innertube.models
+﻿package com.metrolist.innertube.models
 
 import kotlinx.serialization.Serializable
 
@@ -14,7 +14,7 @@ data class ThumbnailRenderer(
         val thumbnailCrop: String?,
         val thumbnailScale: String?,
     ) {
-        fun getThumbnailUrl() = thumbnail.thumbnails.lastOrNull()?.url
+        fun getThumbnailUrl() = thumbnail.bestAvailableThumbnail()?.url
     }
 
     fun getThumbnailUrl(): String? =
