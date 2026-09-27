@@ -4,15 +4,15 @@ Date: 2026-09-27
 
 ## Starting point
 Continue from:
-`I:\codex\metrolist-windows\.worktrees\windows-v1`
+`I:\codex\metrolist-windows`
 
 Branch:
-`feature/windows-v1`
+`main`
 
-Current committed HEAD:
-`8b5da69b0 fix(desktop): include HTTP runtime module`
+Windows V2 code baseline after promotion:
+`9d30d5109 chore(repo): ignore generated desktop probe exports`
 
-Important: the V2 Windows work is intentionally still present as a large modified/untracked diff in this worktree. Do not reset, clean, discard, merge, push, or overwrite it.
+Important: Windows V2 is fully committed and promoted to local `main`. Treat `main` as the source of truth; do not resume from the former `windows-v1` worktree.
 
 ## Windows V2 status
 Windows V2 Plans 01–05 are complete and user-approved.
@@ -33,8 +33,8 @@ Result: BUILD SUCCESSFUL, 205 actionable tasks.
 
 `git diff --check` passed; only normal CRLF warnings were present.
 
-No new MSI was installed. `packageVersion` remains `0.1.2`.
-No commit, push, merge, reset, clean, or worktree removal was performed after final acceptance.
+The Windows release version is `0.2.0`. `MetroListWindows-0.2.0.msi` was generated from `main` and passed `WINDOWS_PACKAGE_VERIFY_OK`; it was not installed automatically.
+The V2 commits were fast-forwarded into local `main`. Nothing was pushed to the remote.
 
 ## Windows behavior that must be preserved
 - Do not fake 320 kbps; audio quality must reflect the actual selected stream.
@@ -78,7 +78,7 @@ The next conversation should begin with discovery/design, not immediate coding:
 
 ## Suggested opening prompt for the next conversation
 
-Continue the MetroList project from `I:\codex\metrolist-windows\.worktrees\windows-v1`. First read `docs/superpowers/handoffs/2026-09-27-metrolist-windows-v2-to-car-apk-handoff.md` and `docs/superpowers/handoffs/2026-09-27-metrolist-windows-v2-final-handoff.md`. Invoke Superpowers before acting. The Windows V2 is complete, user-approved, and must be preserved as the baseline. Do not reset/clean/discard the large intentional diff and do not push, merge, commit, install or version-bump without explicit authorization. Start the car APK phase with discovery and design: inspect the existing Android architecture, current backup/import path, portable backup models/validator, and any existing car-oriented code. Then write a focused design/spec and implementation plan for a landscape, touch-first, offline-first car experience that imports the existing `.metrolistbackup` format without regressing Android or Windows compatibility. Do not start implementation until the design/plan is coherent and grounded in the existing code.
+Continue the MetroList project from `I:\codex\metrolist-windows` on `main`. First read `docs/superpowers/handoffs/2026-09-27-metrolist-windows-v2-to-car-apk-handoff.md` and `docs/superpowers/handoffs/2026-09-27-metrolist-windows-v2-final-handoff.md`. Invoke Superpowers before acting. Windows V2 is complete, user-approved, committed, and promoted to local `main` as the baseline. Do not regress the Windows V2 or change the `.metrolistbackup` contract casually. Do not push, install, or start unrelated refactors without explicit authorization. Start the car APK phase with discovery and design: inspect the existing Android architecture, current backup/import path, portable backup models/validator, and any existing car-oriented code. Then write a focused design/spec and implementation plan for a landscape, touch-first, offline-first car experience that imports the existing `.metrolistbackup` format without regressing Android or Windows compatibility. Do not start implementation until the design/plan is coherent and grounded in the existing code.
 
 ## Final note
-Option 3 from the branch-finishing step was chosen: keep `feature/windows-v1` and the worktree as-is for later handling.
+The earlier keep-as-is decision was superseded by explicit user authorization to promote V2. Windows V2 is now on local `main`; the former feature worktree can be cleaned up after final merged-result verification.

@@ -1,21 +1,23 @@
 # MetroList Windows V2 — Final Handoff
 
 Date: 2026-09-27
-Branch: `feature/windows-v1`
-Worktree: `I:\codex\metrolist-windows\.worktrees\windows-v1`
-Current HEAD before V2 integration work: `8b5da69b0`
+Release baseline: `I:\codex\metrolist-windows`
+Branch: `main`
+V2 code baseline after promotion: `9d30d5109`
 
 ## Status
 V2 Plans 01–05 are implemented and accepted.
 The user manually approved Plan 04 Explore and, on 2026-09-27, confirmed the final Plan 05 smoke with “tudo certo”.
-No commit, push, merge, reset, clean, version bump, or replacement MSI was performed during Plan 05.
+During Plan 05 itself no promotion was performed. After final user acceptance, the user explicitly authorized release promotion: V2 was committed, versioned as `0.2.0`, and fast-forwarded into local `main`. Nothing was pushed to the remote.
 
-## Final TEST build
+## Final release build
 Executable:
-`I:\codex\metrolist-windows\.worktrees\windows-v1\desktop-app\build\compose\binaries\main\app\MetroListWindows\MetroListWindows.exe`
+`I:\codex\metrolist-windows\desktop-app\build\compose\binaries\main\app\MetroListWindows\MetroListWindows.exe`
 
-Desktop TEST shortcut remains the intended easy entry point.
-Final app-image was launched after the final integration gates.
+MSI:
+`I:\codex\metrolist-windows\desktop-app\build\compose\binaries\main\msi\MetroListWindows-0.2.0.msi`
+
+The final app-image and MSI are built from `main`. The package verifier reports `WINDOWS_PACKAGE_VERIFY_OK` with the pinned mpv hash and packaged Auth Helper/WebView2 runtime.
 
 ## Automated evidence
 Windows acceptance gate:
@@ -59,10 +61,10 @@ Final app-image contains the packaged Auth Helper, WebView2 loader, and `libmpv-
 - Preserve the working V1 download/export architecture unless a concrete regression is reproduced.
 - Explore is accepted as-is for V2; future visual refinement is optional and should not expand scope.
 
-## Known limitation / deferred work
+## Release status / deferred work
 No blocker remains for V2 acceptance.
-The installed MSI remains version `0.1.2`; the final V2 app-image has not been promoted through a new installer because version bump/install requires explicit user authorization.
-The large intentional modified/untracked working tree remains intact.
+The release version is `0.2.0`, committed and promoted to local `main`. The MSI has been generated and package-verified, but it has not been installed automatically on Windows.
+The former `feature/windows-v1` worktree is no longer the source of truth; `main` is the Windows V2 baseline.
 
 ## Next phase
 Do not begin automatically.
