@@ -7,14 +7,14 @@ import java.nio.file.StandardCopyOption
 
 class CarArtworkStore(
     baseDir: File,
-) {
+) : CarArtworkImportPort {
     private val rootDir = baseDir.resolve("car-artwork")
     fun fileFor(songId: String): File {
         require(SAFE_ID.matches(songId)) { "Unsafe song ID for artwork path" }
         return rootDir.resolve("$songId.img")
     }
 
-    fun write(
+    override fun write(
         songId: String,
         input: InputStream,
     ): File {
@@ -37,7 +37,31 @@ class CarArtworkStore(
         }
     }
 
-    fun delete(songId: String): Boolean =
+    override fun copy(
+        sourceSongId: String,
+        targetSongId: String,
+    ): File {
+        val source = fileFor(sourceSongId)
+        require(source.isFile) { "Source artwork is missing: $sourceSongId" }
+        rootDir.mkdirs()
+        val target = fileFor(targetSongId)
+        if (source == target) return target
+        val temporary = rootDir.resolve("$targetSongId.img.part")
+        try {
+            Files.copy(source.toPath(), temporary.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            Files.move(
+                temporary.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+            return target
+        } finally {
+            if (temporary.exists()) temporary.delete()
+        }
+    }
+
+    override fun delete(songId: String): Boolean =
         !fileFor(songId).exists() || fileFor(songId).delete()
 
     private companion object {

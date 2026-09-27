@@ -15,51 +15,68 @@ import java.io.InputStream
 class CarMedia3ImportTarget(
     private val cache: Cache,
     databaseProvider: DatabaseProvider,
-) {
+) : CarMediaImportPort {
     private val downloadIndex = DefaultDownloadIndex(databaseProvider)
 
     fun writeResource(
         resource: CarPortableResource,
         openSpan: (CarPortableSpan) -> InputStream,
     ) {
-        if (cache.isCached(resource.cacheKey, 0L, resource.contentLength)) return
+        if (!prepareResource(resource)) return
+        resource.spans.sortedBy(CarPortableSpan::position).forEach { span ->
+            openSpan(span).use { input ->
+                writeSpan(resource, span, input)
+            }
+        }
+        finishResource(resource)
+    }
 
+    override fun prepareResource(resource: CarPortableResource): Boolean {
+        if (cache.isCached(resource.cacheKey, 0L, resource.contentLength)) return false
         if (cache.getCachedBytes(resource.cacheKey, 0L, resource.contentLength) > 0L) {
             cache.removeResource(resource.cacheKey)
         }
+        return true
+    }
 
-        resource.spans.sortedBy(CarPortableSpan::position).forEach { span ->
-            require(span.cacheKey == resource.cacheKey) { "Span cache key mismatch" }
-            val hole = cache.startReadWrite(resource.cacheKey, span.position, span.length)
-            check(hole.isHoleSpan) { "Expected writable cache hole for " + span.relativePath }
+    override fun writeSpan(
+        resource: CarPortableResource,
+        span: CarPortableSpan,
+        input: InputStream,
+    ) {
+        require(span.cacheKey == resource.cacheKey) { "Span cache key mismatch" }
+        val hole = cache.startReadWrite(resource.cacheKey, span.position, span.length)
+        check(hole.isHoleSpan) { "Expected writable cache hole for " + span.relativePath }
+        try {
+            val sink = CacheDataSink(cache, CacheDataSink.DEFAULT_FRAGMENT_SIZE)
+            val dataSpec =
+                DataSpec.Builder()
+                    .setUri(resource.songId)
+                    .setPosition(span.position)
+                    .setLength(span.length)
+                    .setKey(resource.cacheKey)
+                    .build()
+            sink.open(dataSpec)
             try {
-                val sink = CacheDataSink(cache, CacheDataSink.DEFAULT_FRAGMENT_SIZE)
-                val dataSpec =
-                    DataSpec.Builder()
-                        .setUri(resource.songId)
-                        .setPosition(span.position)
-                        .setLength(span.length)
-                        .setKey(resource.cacheKey)
-                        .build()
-                sink.open(dataSpec)
-                try {
-                    openSpan(span).use { input ->
-                        copyExactly(input, sink, span.length)
-                    }
-                } finally {
-                    sink.close()
-                }
+                copyExactly(input, sink, span.length)
             } finally {
-                cache.releaseHoleSpan(hole)
+                sink.close()
             }
+        } finally {
+            cache.releaseHoleSpan(hole)
         }
+    }
 
+    override fun finishResource(resource: CarPortableResource) {
         val metadata = ContentMetadataMutations()
         ContentMetadataMutations.setContentLength(metadata, resource.contentLength)
         cache.applyContentMetadataMutations(resource.cacheKey, metadata)
+        check(cache.isCached(resource.cacheKey, 0L, resource.contentLength)) {
+            "Imported cache resource is incomplete: " + resource.songId
+        }
     }
 
-    fun putCompletedDownload(transfer: CarPortableTransfer) {
+    override fun putCompletedDownload(transfer: CarPortableTransfer) {
         val request =
             DownloadRequest.Builder(
                 transfer.requestId,
@@ -94,6 +111,14 @@ class CarMedia3ImportTarget(
                 progress,
             ),
         )
+    }
+
+    override fun removeResource(songId: String) {
+        cache.removeResource(songId)
+    }
+
+    override fun removeDownload(songId: String) {
+        downloadIndex.removeDownload(songId)
     }
 
     private fun copyExactly(

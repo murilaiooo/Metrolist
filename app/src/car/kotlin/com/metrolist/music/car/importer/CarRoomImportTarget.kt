@@ -1,11 +1,12 @@
 package com.metrolist.music.car.importer
 
 import com.metrolist.music.db.MusicDatabase
+import java.time.LocalDateTime
 
 class CarRoomImportTarget(
     private val database: MusicDatabase,
-) {
-    suspend fun upsertSongBundle(
+) : CarRoomImportPort {
+    override suspend fun upsertSongBundle(
         song: CarPortableSong,
         artists: List<CarPortableArtist>,
         maps: List<CarPortableMap>,
@@ -28,6 +29,29 @@ class CarRoomImportTarget(
             CarPortableMappers.toSongArtistMaps(song.id, maps).forEach(::insert)
 
             upsert(CarPortableMappers.toFormatEntity(format))
+        }
+    }
+
+    override suspend fun removeSongBundle(songId: String) {
+        database.withTransaction {
+            songEntity(songId)?.let(::delete)
+            deleteFormat(songId)
+        }
+    }
+
+    override suspend fun restoreDownloadState(
+        songId: String,
+        isDownloaded: Boolean,
+        dateDownload: String?,
+    ) {
+        database.withTransaction {
+            val existing = songEntity(songId) ?: return@withTransaction
+            upsert(
+                existing.copy(
+                    isDownloaded = isDownloaded,
+                    dateDownload = dateDownload?.let(LocalDateTime::parse),
+                ),
+            )
         }
     }
 }

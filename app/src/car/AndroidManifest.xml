@@ -25,6 +25,11 @@
             android:enabled="false"
             tools:replace="android:enabled" />
 
+        <service
+            android:name=".car.service.CarImportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
             tools:node="remove" />
