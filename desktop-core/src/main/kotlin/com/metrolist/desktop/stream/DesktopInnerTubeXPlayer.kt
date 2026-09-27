@@ -9,6 +9,8 @@ import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.innertubex.extraction.ExtractedStream
 import com.metrolist.innertubex.extraction.InnerTubeExtractor
 import com.metrolist.innertubex.extraction.StreamExtractor
+import com.metrolist.innertubex.extraction.StreamResolveException
+import com.metrolist.innertubex.extraction.TokenProvider
 import com.metrolist.innertubex.extraction.YtConfigParser
 import com.metrolist.innertubex.extraction.YtConfigParserImpl
 import com.metrolist.innertubex.extraction.generateClientPlaybackNonce
@@ -17,18 +19,34 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class DesktopInnerTubeXPlayer private constructor(
-    private val extractorProvider: suspend () -> StreamExtractor,
+    private val extractorProvider: suspend (Boolean) -> StreamExtractor,
+    private val tokenFallbackEnabled: Boolean,
 ) {
-    constructor(configPath: Path) : this(
-        extractorProvider = ProductionExtractorProvider(configPath)::get,
+    constructor(
+        configPath: Path,
+        tokenProvider: TokenProvider? = null,
+    ) : this(
+        extractorProvider = ProductionExtractorProvider(configPath, tokenProvider)::get,
+        tokenFallbackEnabled = tokenProvider != null,
     )
 
     internal constructor(extractor: StreamExtractor) : this(
         extractorProvider = { extractor },
+        tokenFallbackEnabled = false,
+    )
+
+    internal constructor(
+        extractor: StreamExtractor,
+        tokenFallbackExtractor: StreamExtractor,
+    ) : this(
+        extractorProvider = { useTokenFallback ->
+            if (useTokenFallback) tokenFallbackExtractor else extractor
+        },
+        tokenFallbackEnabled = true,
     )
 
     suspend fun prewarm() {
-        extractorProvider().prewarm()
+        extractorProvider(false).prewarm()
     }
 
     suspend fun resolve(
@@ -69,15 +87,29 @@ class DesktopInnerTubeXPlayer private constructor(
             )
 
         val stream =
-            requireNotNull(
-                extractorProvider().extract(
+            try {
+                extractRequired(
+                    extractor = extractorProvider(false),
                     videoId = videoId,
                     hints = hints,
                     excludedClients = excludedClients,
                     audioQuality = audioQuality,
-                    clientPlaybackNonce = generateClientPlaybackNonce(),
-                ),
-            ) { "InnerTubeX returned no playable audio stream" }
+                )
+            } catch (error: StreamResolveException) {
+                if (!tokenFallbackEnabled ||
+                    error.reason != StreamResolveException.Reason.NO_PLAYABLE_STREAM
+                ) {
+                    throw error
+                }
+
+                extractRequired(
+                    extractor = extractorProvider(true),
+                    videoId = videoId,
+                    hints = hints,
+                    excludedClients = excludedClients,
+                    audioQuality = audioQuality,
+                )
+            }
 
         check(stream.sabrBootstrap == null) {
             "SABR is not supported by the Windows downloader"
@@ -85,6 +117,23 @@ class DesktopInnerTubeXPlayer private constructor(
 
         return stream.toResolvedAudio()
     }
+
+    private suspend fun extractRequired(
+        extractor: StreamExtractor,
+        videoId: String,
+        hints: ContentHints,
+        excludedClients: Set<String>,
+        audioQuality: AudioQuality,
+    ): ExtractedStream =
+        requireNotNull(
+            extractor.extract(
+                videoId = videoId,
+                hints = hints,
+                excludedClients = excludedClients,
+                audioQuality = audioQuality,
+                clientPlaybackNonce = generateClientPlaybackNonce(),
+            ),
+        ) { "InnerTubeX returned no playable audio stream" }
 
     private fun ExtractedStream.toResolvedAudio(): ResolvedAudio =
         ResolvedAudio(
@@ -109,23 +158,24 @@ class DesktopInnerTubeXPlayer private constructor(
 
     private class ProductionExtractorProvider(
         private val configPath: Path,
+        private val tokenProvider: TokenProvider?,
     ) {
         private val mutex = Mutex()
 
         @Volatile
         private var currentBundle: ExtractionBundle? = null
 
-        suspend fun get(): StreamExtractor {
+        suspend fun get(useTokenFallback: Boolean): StreamExtractor {
             val transport = YouTube.extractionTransport()
             currentBundle
                 ?.takeIf { it.transportGeneration == transport.generation }
-                ?.let { return it.extractor }
+                ?.let { return it.select(useTokenFallback) }
 
             return mutex.withLock {
                 val latest = YouTube.extractionTransport()
                 currentBundle
                     ?.takeIf { it.transportGeneration == latest.generation }
-                    ?.let { return@withLock it.extractor }
+                    ?.let { return@withLock it.select(useTokenFallback) }
 
                 currentBundle?.cipherService?.dispose()
 
@@ -142,7 +192,7 @@ class DesktopInnerTubeXPlayer private constructor(
                         remoteStore,
                         InnerTubeLogger.NONE,
                     )
-                val parser =
+                fun parser(): YtConfigParser =
                     YtConfigParserImpl(
                         latest.httpClient,
                         latest.innerTube,
@@ -152,18 +202,29 @@ class DesktopInnerTubeXPlayer private constructor(
 
                 val extractor =
                     InnerTubeExtractor(
-                        configParser = parser,
+                        configParser = parser(),
                         cipherService = cipherService,
                         innerTube = latest.innerTube,
                         tokenProvider = null,
                         logger = InnerTubeLogger.NONE,
                     )
+                val tokenExtractor =
+                    tokenProvider?.let { provider ->
+                        InnerTubeExtractor(
+                            configParser = parser(),
+                            cipherService = cipherService,
+                            innerTube = latest.innerTube,
+                            tokenProvider = provider,
+                            logger = InnerTubeLogger.NONE,
+                        )
+                    }
 
                 ExtractionBundle(
                     transportGeneration = latest.generation,
                     cipherService = cipherService,
                     extractor = extractor,
-                ).also { currentBundle = it }.extractor
+                    tokenExtractor = tokenExtractor,
+                ).also { currentBundle = it }.select(useTokenFallback)
             }
         }
     }
@@ -172,7 +233,11 @@ class DesktopInnerTubeXPlayer private constructor(
         val transportGeneration: Long,
         val cipherService: YouTubeCipherService,
         val extractor: InnerTubeExtractor,
-    )
+        val tokenExtractor: InnerTubeExtractor?,
+    ) {
+        fun select(useTokenFallback: Boolean): StreamExtractor =
+            if (useTokenFallback) tokenExtractor ?: extractor else extractor
+    }
 
 }
 

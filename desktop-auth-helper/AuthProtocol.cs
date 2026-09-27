@@ -29,6 +29,9 @@ internal static class AuthProtocol
         if (!IsComplete(new[] { "SAPISID" }, "visitor")) return 15;
         if (IsComplete(new[] { "SAPISID" }, "")) return 16;
 
+        var poTokenResult = PoTokenProtocol.SelfTest();
+        if (poTokenResult != 0) return poTokenResult;
+
         Console.WriteLine("SELF_TEST_OK");
         return 0;
     }

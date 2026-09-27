@@ -75,7 +75,67 @@ class DesktopInnerTubeXPlayerTest {
         assertTrue("Authorization" !in resolved.toString())
     }
 
-    private class CapturingExtractor : StreamExtractor {
+    @Test
+    fun noPlayableStreamUsesTokenFallbackExtractor() = runBlocking {
+        val primary =
+            FailingExtractor(
+                com.metrolist.innertubex.extraction.StreamResolveException.Reason.NO_PLAYABLE_STREAM,
+            )
+        val fallback = CapturingExtractor(clientName = "WEB_REMIX_TOKEN")
+        val player = DesktopInnerTubeXPlayer(primary, fallback)
+
+        val resolved = player.resolve("WcHpojJz8Bc")
+
+        assertEquals(1, primary.calls)
+        assertEquals(1, fallback.calls)
+        assertEquals("WEB_REMIX_TOKEN", resolved.clientName)
+    }
+
+    @Test
+    fun unavailableTrackDoesNotUseTokenFallbackExtractor() = runBlocking {
+        val primary =
+            FailingExtractor(
+                com.metrolist.innertubex.extraction.StreamResolveException.Reason.UNAVAILABLE,
+            )
+        val fallback = CapturingExtractor(clientName = "SHOULD_NOT_RUN")
+        val player = DesktopInnerTubeXPlayer(primary, fallback)
+
+        kotlin.test.assertFailsWith<com.metrolist.innertubex.extraction.StreamResolveException> {
+            player.resolve("WcHpojJz8Bc")
+        }
+
+        assertEquals(1, primary.calls)
+        assertEquals(0, fallback.calls)
+    }
+
+    private class FailingExtractor(
+        private val reason: com.metrolist.innertubex.extraction.StreamResolveException.Reason,
+    ) : StreamExtractor {
+        var calls = 0
+
+        override suspend fun prewarm() = Unit
+
+        override suspend fun extract(
+            videoId: String,
+            hints: ContentHints,
+            excludedClients: Set<String>,
+            audioQuality: AudioQuality,
+            clientPlaybackNonce: String,
+        ): ExtractedStream {
+            calls++
+            throw com.metrolist.innertubex.extraction.StreamResolveException(
+                reason,
+                "probe failure",
+                null,
+                null,
+            )
+        }
+    }
+
+    private class CapturingExtractor(
+        private val clientName: String = "WEB_REMIX",
+    ) : StreamExtractor {
+        var calls = 0
         var quality: AudioQuality? = null
         var hints: ContentHints? = null
         var excludedClients: Set<String> = emptySet()
@@ -89,6 +149,7 @@ class DesktopInnerTubeXPlayerTest {
             audioQuality: AudioQuality,
             clientPlaybackNonce: String,
         ): ExtractedStream {
+            calls++
             this.quality = audioQuality
             this.hints = hints
             this.excludedClients = excludedClients
@@ -105,7 +166,7 @@ class DesktopInnerTubeXPlayerTest {
                 codecs = "opus",
                 bitrate = 144_747,
                 sampleRate = 48_000,
-                clientName = "WEB_REMIX",
+                clientName = clientName,
                 profileId = "WEB_REMIX",
                 requireBoundedRange = false,
                 rangeChunkSizeBytes = 1_048_576,

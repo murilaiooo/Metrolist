@@ -31,6 +31,7 @@ import com.metrolist.desktop.portable.OfflineBackupService
 import com.metrolist.desktop.portable.PortableExportEstimate
 import com.metrolist.desktop.portable.PortableExportProgress
 import com.metrolist.desktop.stream.DesktopInnerTubeXPlayer
+import com.metrolist.desktop.stream.DesktopPoTokenProvider
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.SongItem
 import java.nio.file.Files
@@ -530,9 +531,15 @@ class DesktopRuntime private constructor(
                     store = libraryStore,
                     gateway = MetroListYouTubePlaylistGateway(),
                 )
+            val tokenProvider =
+                DesktopPoTokenProvider(
+                    baseCommand = authHelperCommand(projectRoot),
+                    workingDirectory = projectRoot,
+                )
             val resolver =
                 DesktopInnerTubeXPlayer(
-                    appData.resolve("innertubex").resolve("player-config.properties"),
+                    configPath = appData.resolve("innertubex").resolve("player-config.properties"),
+                    tokenProvider = tokenProvider,
                 )
             val fetcher = ResolvedMediaFetcher()
             val worker =

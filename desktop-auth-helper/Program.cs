@@ -18,6 +18,24 @@ internal static class Program
             return CheckWebView2Runtime();
         }
 
+        var poTokenIndex = Array.FindIndex(
+            args,
+            arg => string.Equals(arg, "--po-token", StringComparison.Ordinal)
+        );
+        if (poTokenIndex >= 0)
+        {
+            if (poTokenIndex + 2 >= args.Length)
+            {
+                Console.Error.WriteLine("PO_TOKEN_ARGUMENTS_MISSING");
+                return 3;
+            }
+
+            return RunPoToken(
+                videoId: args[poTokenIndex + 1],
+                visitorData: args[poTokenIndex + 2]
+            );
+        }
+
         ApplicationConfiguration.Initialize();
 
         using var window = new AuthWindow();
@@ -36,6 +54,36 @@ internal static class Program
             }
         );
 
+        Console.Out.WriteLine(json);
+        return 0;
+    }
+
+    private static int RunPoToken(string videoId, string visitorData)
+    {
+        ApplicationConfiguration.Initialize();
+
+        using var window = new PoTokenWindow(videoId, visitorData);
+        Application.Run(window);
+
+        if (window.Result is null)
+        {
+            var error = window.Error;
+            Console.Error.WriteLine(
+                "PO_TOKEN_FAILED:" +
+                (error is null
+                    ? "Unknown"
+                    : error.GetType().Name + ":" + error.Message.Take(180).Aggregate("", (a, c) => a + c))
+            );
+            return 1;
+        }
+
+        var json = JsonSerializer.Serialize(
+            window.Result,
+            new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            }
+        );
         Console.Out.WriteLine(json);
         return 0;
     }

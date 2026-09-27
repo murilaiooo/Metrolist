@@ -178,6 +178,51 @@ class MetroListOfflineWorkerTest {
     }
 
     @Test
+    fun transientNoPlayableStreamIsRetriedBeforeFailing() = runBlocking {
+        var resolves = 0
+        val mediaDir = Path.of(System.getProperty("java.io.tmpdir"), "offline-worker-resolve-retry")
+        Files.createDirectories(mediaDir)
+
+        val worker =
+            MetroListOfflineWorker(
+                mediaDir = mediaDir,
+                resolver = {
+                    resolves++
+                    if (resolves == 1) {
+                        throw com.metrolist.innertubex.extraction.StreamResolveException(
+                            com.metrolist.innertubex.extraction.StreamResolveException.Reason.NO_PLAYABLE_STREAM,
+                            "temporary resolver miss",
+                            null,
+                            null,
+                        )
+                    }
+                    resolvedAudio()
+                },
+                fetcher = { _, destination, _ ->
+                    Files.write(destination, ByteArray(12) { 1 })
+                    WrittenMedia(destination, 12L, "r".repeat(64))
+                },
+                resolveRetryDelaysMs = listOf(0L, 0L),
+            )
+
+        val result =
+            worker.transfer(
+                OfflineRecord.queued(
+                    SongItem(
+                        id = "retry-resolve-song",
+                        title = "Song",
+                        artists = emptyList(),
+                        thumbnail = "",
+                    ),
+                    nowMs = 10L,
+                ),
+            )
+
+        assertEquals(2, resolves)
+        assertEquals(OfflineState.COMPLETED, result.state)
+    }
+
+    @Test
     fun reResolvesOnceWhenMediaUrlExpires() {
         runBlocking {
             var resolves = 0
