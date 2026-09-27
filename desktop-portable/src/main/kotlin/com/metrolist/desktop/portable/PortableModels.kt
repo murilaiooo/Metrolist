@@ -11,6 +11,7 @@ data class PortableItem(
     val song: SongItem,
     val resolved: ResolvedAudio,
     val mediaPath: Path,
+    val artworkPath: Path? = null,
     val downloadedAt: LocalDateTime,
     val startTimeMs: Long,
     val updateTimeMs: Long,

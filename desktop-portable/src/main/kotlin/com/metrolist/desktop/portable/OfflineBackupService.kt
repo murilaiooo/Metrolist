@@ -10,10 +10,29 @@ import java.time.LocalDateTime
 class OfflineBackupService(
     private val store: OfflineStore,
     private val writer: PortableBackupWriter = PortableBackupWriter(),
+    private val artworkProvider: (String) -> Path? = { null },
 ) {
+    fun estimateAll(): PortableExportEstimate {
+        val items = store.listCompleted().map(::toPortableItem)
+        require(items.isNotEmpty()) { "No completed offline media is available for export" }
+
+        val uniqueArtwork =
+            items
+                .mapNotNull(PortableItem::artworkPath)
+                .filter(Files::isRegularFile)
+                .distinctBy { it.toAbsolutePath().normalize().toString() }
+
+        return PortableExportEstimate(
+            songCount = items.size,
+            audioBytes = items.sumOf { Files.size(it.mediaPath) },
+            artworkBytes = uniqueArtwork.sumOf(Files::size),
+        )
+    }
+
     fun exportAll(
         destination: Path,
         createdAt: LocalDateTime = LocalDateTime.now(),
+        onProgress: (PortableExportProgress) -> Unit = {},
     ): Path {
         val items = store.listCompleted().map(::toPortableItem)
         require(items.isNotEmpty()) { "No completed offline media is available for export" }
@@ -22,6 +41,7 @@ class OfflineBackupService(
             items = items,
             destination = destination,
             createdAt = createdAt,
+            onProgress = onProgress,
         )
     }
 
@@ -67,10 +87,18 @@ class OfflineBackupService(
                 perceptualLoudnessDb = format.perceptualLoudnessDb,
             )
 
+        val artworkPath =
+            record.thumbnail
+                .takeIf(String::isNotBlank)
+                ?.let { thumbnail ->
+                    runCatching { artworkProvider(thumbnail) }.getOrNull()
+                }
+
         return PortableItem(
             song = record.toSongItem(),
             resolved = resolved,
             mediaPath = mediaPath,
+            artworkPath = artworkPath,
             downloadedAt =
                 record.downloadedAt
                     ?.let(LocalDateTime::parse)

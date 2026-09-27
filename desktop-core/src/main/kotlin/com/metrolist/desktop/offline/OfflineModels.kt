@@ -52,6 +52,7 @@ data class OfflineRecord(
     val localPath: String? = null,
     val bytesDownloaded: Long = 0L,
     val contentLength: Long? = null,
+    val bytesPerSecond: Long = 0L,
     val format: FormatSnapshot? = null,
     val downloadedAt: String? = null,
     val startTimeMs: Long,

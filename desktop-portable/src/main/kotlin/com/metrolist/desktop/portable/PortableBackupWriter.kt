@@ -22,11 +22,15 @@ class PortableBackupWriter(
             encodeDefaults = true
             explicitNulls = true
         },
+    private val usableSpace: (Path) -> Long = { path ->
+        Files.getFileStore(path).usableSpace
+    },
 ) {
     fun write(
         items: List<PortableItem>,
         destination: Path,
         createdAt: LocalDateTime = LocalDateTime.now(),
+        onProgress: (PortableExportProgress) -> Unit = {},
     ): Path {
         require(items.isNotEmpty()) { "At least one offline item is required" }
 
@@ -34,7 +38,22 @@ class PortableBackupWriter(
         val temporary = destination.resolveSibling(destination.fileName.toString() + ".part")
         Files.deleteIfExists(temporary)
 
-        val prepared = items.map(::prepareItem)
+        val prepared = mutableListOf<PreparedItem>()
+        items.forEachIndexed { index, item ->
+            prepared += prepareItem(item)
+            reportProgress(
+                onProgress,
+                PortableExportProgress(
+                    phase = PortableExportPhase.PREPARING,
+                    completedItems = index + 1,
+                    totalItems = items.size,
+                ),
+            )
+        }
+        val artworks =
+            prepared
+                .mapNotNull(PreparedItem::artwork)
+                .distinctBy(PreparedArtwork::relativePath)
         val metadataEntries = buildMetadataEntries(prepared)
         val metadataFiles =
             metadataEntries.map { (path, bytes) ->
@@ -46,6 +65,15 @@ class PortableBackupWriter(
                 )
             }
         val spanFiles = prepared.flatMap(PreparedItem::spanFiles)
+        val artworkFiles =
+            artworks.map { artwork ->
+                PortableFile(
+                    relativePath = artwork.relativePath,
+                    size = artwork.size,
+                    sha256 = artwork.sha256,
+                    kind = "artwork",
+                )
+            }
         val resources = prepared.map(PreparedItem::resource)
 
         val manifest =
@@ -54,19 +82,51 @@ class PortableBackupWriter(
                 exportedSongCount = prepared.size,
                 exportedDownloadCount = prepared.size,
                 totalCacheBytes = prepared.sumOf { it.contentLength },
+                totalArtworkBytes = artworks.sumOf(PreparedArtwork::size),
                 songIds = prepared.map { it.item.song.id },
                 requestIds = prepared.map { it.item.song.id },
                 exportedCacheResources = resources,
-                files = metadataFiles + spanFiles,
+                files = metadataFiles + spanFiles + artworkFiles,
             )
         val manifestBytes = json.encodeToString(manifest).encodeToByteArray()
+        val requiredDataBytes =
+            prepared.sumOf(PreparedItem::contentLength) +
+                artworks.sumOf(PreparedArtwork::size) +
+                metadataEntries.sumOf { it.second.size.toLong() } +
+                manifestBytes.size.toLong()
+
+        ensureDestinationCapacity(
+            destination = destination,
+            requiredDataBytes = requiredDataBytes,
+        )
 
         try {
+            var bytesWritten = 0L
+
+            fun reportWritten(delta: Long) {
+                bytesWritten += delta
+                reportProgress(
+                    onProgress,
+                    PortableExportProgress(
+                        phase = PortableExportPhase.WRITING,
+                        completedItems = prepared.size,
+                        totalItems = prepared.size,
+                        bytesWritten = bytesWritten,
+                        totalBytes = requiredDataBytes,
+                    ),
+                )
+            }
+
             ZipOutputStream(BufferedOutputStream(Files.newOutputStream(temporary))).use { zip ->
                 zip.setLevel(Deflater.NO_COMPRESSION)
 
                 putBytes(zip, "manifest.json", manifestBytes)
-                metadataEntries.forEach { (path, bytes) -> putBytes(zip, path, bytes) }
+                reportWritten(manifestBytes.size.toLong())
+
+                metadataEntries.forEach { (path, bytes) ->
+                    putBytes(zip, path, bytes)
+                    reportWritten(bytes.size.toLong())
+                }
 
                 prepared.forEach { preparedItem ->
                     preparedItem.spans.forEach { span ->
@@ -77,15 +137,44 @@ class PortableBackupWriter(
                             position = span.position,
                             length = span.length,
                         )
+                        reportWritten(span.length)
                     }
+                }
+                artworks.forEach { artwork ->
+                    putFile(
+                        zip = zip,
+                        entryName = artwork.relativePath,
+                        source = artwork.source,
+                    )
+                    reportWritten(artwork.size)
                 }
             }
 
+            reportProgress(
+                onProgress,
+                PortableExportProgress(
+                    phase = PortableExportPhase.VALIDATING,
+                    completedItems = prepared.size,
+                    totalItems = prepared.size,
+                    bytesWritten = bytesWritten,
+                    totalBytes = requiredDataBytes,
+                ),
+            )
             val validation = PortableValidator().validate(temporary)
-            check(validation.valid) {
-                "Portable backup validation failed: ${validation.errors.joinToString("; ")}"
+            if (!validation.valid) {
+                throw PortableValidationException(validation.errors)
             }
 
+            reportProgress(
+                onProgress,
+                PortableExportProgress(
+                    phase = PortableExportPhase.FINALIZING,
+                    completedItems = prepared.size,
+                    totalItems = prepared.size,
+                    bytesWritten = bytesWritten,
+                    totalBytes = requiredDataBytes,
+                ),
+            )
             try {
                 Files.move(
                     temporary,
@@ -97,10 +186,54 @@ class PortableBackupWriter(
                 Files.move(temporary, destination, StandardCopyOption.REPLACE_EXISTING)
             }
 
+            reportProgress(
+                onProgress,
+                PortableExportProgress(
+                    phase = PortableExportPhase.COMPLETE,
+                    completedItems = prepared.size,
+                    totalItems = prepared.size,
+                    bytesWritten = bytesWritten,
+                    totalBytes = requiredDataBytes,
+                ),
+            )
             return destination
         } catch (error: Exception) {
             Files.deleteIfExists(temporary)
             throw error
+        }
+    }
+
+    private fun ensureDestinationCapacity(
+        destination: Path,
+        requiredDataBytes: Long,
+    ) {
+        val directory =
+            destination.toAbsolutePath().parent
+                ?: error("Backup destination has no parent directory")
+        Files.createDirectories(directory)
+
+        val safetyMargin =
+            maxOf(
+                MIN_EXPORT_SAFETY_MARGIN_BYTES,
+                requiredDataBytes / 20L,
+            )
+        val requiredWithMargin = Math.addExact(requiredDataBytes, safetyMargin)
+        val available = usableSpace(directory)
+
+        if (available < requiredWithMargin) {
+            throw InsufficientExportSpaceException(
+                requiredBytes = requiredWithMargin,
+                availableBytes = available,
+            )
+        }
+    }
+
+    private fun reportProgress(
+        listener: (PortableExportProgress) -> Unit,
+        progress: PortableExportProgress,
+    ) {
+        runCatching {
+            listener(progress)
         }
     }
 
@@ -124,6 +257,24 @@ class PortableBackupWriter(
                 )
             }
 
+        val artworkPath = item.artworkPath
+        val artwork =
+            if (
+                artworkPath != null &&
+                item.song.thumbnail.isNotBlank() &&
+                Files.isRegularFile(artworkPath) &&
+                Files.size(artworkPath) > 0L
+            ) {
+                PreparedArtwork(
+                    relativePath = "artwork/" + SpanPlanner.artworkFileName(item.song.thumbnail),
+                    source = artworkPath,
+                    size = Files.size(artworkPath),
+                    sha256 = sha256(Files.readAllBytes(artworkPath)),
+                )
+            } else {
+                null
+            }
+
         return PreparedItem(
             item = item,
             contentLength = contentLength,
@@ -144,6 +295,7 @@ class PortableBackupWriter(
                         kind = "media3_cache_span",
                     )
                 },
+            artwork = artwork,
         )
     }
 
@@ -156,7 +308,7 @@ class PortableBackupWriter(
                     title = song.title,
                     duration = song.duration,
                     thumbnailUrl = song.thumbnail,
-                    thumbnailArtworkPath = null,
+                    thumbnailArtworkPath = prepared.artwork?.relativePath,
                     albumId = song.album?.id,
                     albumName = song.album?.name,
                     explicit = song.explicit,
@@ -252,6 +404,18 @@ class PortableBackupWriter(
         zip.closeEntry()
     }
 
+    private fun putFile(
+        zip: ZipOutputStream,
+        entryName: String,
+        source: Path,
+    ) {
+        zip.putNextEntry(ZipEntry(entryName))
+        Files.newInputStream(source).use { input ->
+            input.copyTo(zip)
+        }
+        zip.closeEntry()
+    }
+
     private fun putRange(
         zip: ZipOutputStream,
         entryName: String,
@@ -299,11 +463,23 @@ class PortableBackupWriter(
             .digest(bytes)
             .joinToString("") { "%02x".format(it) }
 
+    private companion object {
+        const val MIN_EXPORT_SAFETY_MARGIN_BYTES = 64L * 1024L * 1024L
+    }
+
+    private data class PreparedArtwork(
+        val relativePath: String,
+        val source: Path,
+        val size: Long,
+        val sha256: String,
+    )
+
     private data class PreparedItem(
         val item: PortableItem,
         val contentLength: Long,
         val spans: List<PortableSpan>,
         val resource: PortableResource,
         val spanFiles: List<PortableFile>,
+        val artwork: PreparedArtwork?,
     )
 }

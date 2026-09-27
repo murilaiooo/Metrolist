@@ -23,9 +23,53 @@ class OfflineStore(
         databasePath.parent?.let(Files::createDirectories)
         Class.forName("org.sqlite.JDBC")
         connection = DriverManager.getConnection("jdbc:sqlite:${databasePath.toAbsolutePath()}")
+
+        try {
+            connection.createStatement().use { statement ->
+                statement.execute("PRAGMA journal_mode=WAL")
+                statement.execute("PRAGMA synchronous=NORMAL")
+            }
+            migrateSchema()
+        } catch (error: Throwable) {
+            runCatching { connection.close() }
+            throw error
+        }
+    }
+
+    private fun migrateSchema() {
+        var version = readSchemaVersion()
+        check(version <= CURRENT_SCHEMA_VERSION) {
+            "Offline database schema version $version is newer than supported version $CURRENT_SCHEMA_VERSION"
+        }
+        if (version == CURRENT_SCHEMA_VERSION) return
+
+        val previousAutoCommit = connection.autoCommit
+        connection.autoCommit = false
+        try {
+            while (version < CURRENT_SCHEMA_VERSION) {
+                version =
+                    when (version) {
+                        0 -> {
+                            migrateVersion0To1()
+                            1
+                        }
+
+                        else ->
+                            error("No migration path from offline database schema version $version")
+                    }
+                setSchemaVersion(version)
+            }
+            connection.commit()
+        } catch (error: Throwable) {
+            runCatching { connection.rollback() }
+            throw error
+        } finally {
+            connection.autoCommit = previousAutoCommit
+        }
+    }
+
+    private fun migrateVersion0To1() {
         connection.createStatement().use { statement ->
-            statement.execute("PRAGMA journal_mode=WAL")
-            statement.execute("PRAGMA synchronous=NORMAL")
             statement.execute(
                 """
                 CREATE TABLE IF NOT EXISTS offline_records (
@@ -36,6 +80,20 @@ class OfflineStore(
                 )
                 """.trimIndent(),
             )
+        }
+    }
+
+    private fun readSchemaVersion(): Int =
+        connection.createStatement().use { statement ->
+            statement.executeQuery("PRAGMA user_version").use { result ->
+                check(result.next()) { "Could not read offline database schema version" }
+                result.getInt(1)
+            }
+        }
+
+    private fun setSchemaVersion(version: Int) {
+        connection.createStatement().use { statement ->
+            statement.execute("PRAGMA user_version=$version")
         }
     }
 
@@ -128,5 +186,9 @@ class OfflineStore(
 
     override fun close() {
         connection.close()
+    }
+
+    private companion object {
+        const val CURRENT_SCHEMA_VERSION = 1
     }
 }

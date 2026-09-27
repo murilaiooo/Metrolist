@@ -34,12 +34,38 @@ class DesktopInnerTubeXPlayer private constructor(
     suspend fun resolve(
         videoId: String,
         contentHints: ContentHints = ContentHints(),
+    ): ResolvedAudio =
+        resolveInternal(
+            videoId = videoId,
+            contentHints = contentHints,
+            excludedClients = emptySet(),
+            audioQuality = AudioQuality.HIGH,
+        )
+
+    internal suspend fun resolveForAudit(
+        videoId: String,
+        excludedClients: Set<String>,
+        contentHints: ContentHints = ContentHints(),
+        audioQuality: AudioQuality = AudioQuality.HIGH,
+    ): ResolvedAudio =
+        resolveInternal(
+            videoId = videoId,
+            contentHints = contentHints,
+            excludedClients = excludedClients,
+            audioQuality = audioQuality,
+        )
+
+    private suspend fun resolveInternal(
+        videoId: String,
+        contentHints: ContentHints,
+        excludedClients: Set<String>,
+        audioQuality: AudioQuality,
     ): ResolvedAudio {
         val hints =
             contentHints.withStreamCapabilities(
                 allowHls = false,
                 allowSabr = false,
-                allowBoundedRange = true,
+                allowBoundedRange = false,
             )
 
         val stream =
@@ -47,8 +73,8 @@ class DesktopInnerTubeXPlayer private constructor(
                 extractorProvider().extract(
                     videoId = videoId,
                     hints = hints,
-                    excludedClients = emptySet(),
-                    audioQuality = AudioQuality.HIGH,
+                    excludedClients = excludedClients,
+                    audioQuality = audioQuality,
                     clientPlaybackNonce = generateClientPlaybackNonce(),
                 ),
             ) { "InnerTubeX returned no playable audio stream" }

@@ -34,7 +34,9 @@ suspend fun main(args: Array<String>) {
         val worker = MetroListOfflineWorker(
             mediaDir = runtime.resolve("media"),
             resolver = resolver::resolve,
-            fetcher = fetcher::fetch,
+            fetcher = { resolved, destination, onProgress ->
+                fetcher.fetch(resolved, destination, onProgress)
+            },
         )
 
         val song = YouTube.queue(videoIds = listOf("WcHpojJz8Bc"))
@@ -43,7 +45,9 @@ suspend fun main(args: Array<String>) {
 
         PersistentOfflineQueue(
             store = store,
-            worker = worker::transfer,
+            worker = { record, onProgress ->
+                worker.transfer(record, onProgress)
+            },
             maxConcurrent = 3,
         ).use { queue ->
             queue.enqueue(song)

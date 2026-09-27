@@ -5,9 +5,14 @@ import com.metrolist.desktop.stream.ResolvedAudio
 import com.metrolist.innertube.models.SongItem
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -48,6 +53,128 @@ class MetroListOfflineWorkerTest {
             assertTrue(requireNotNull(result.localPath).endsWith("song-1.media"))
             assertNotNull(result.downloadedAt)
         }
+    }
+
+    @Test
+    fun cancellationCleansFinalAndPartialMedia() = runBlocking {
+        val mediaDir = Path.of(System.getProperty("java.io.tmpdir"), "offline-worker-cancel")
+        Files.createDirectories(mediaDir)
+        val started = CompletableDeferred<Unit>()
+
+        val worker = MetroListOfflineWorker(
+            mediaDir = mediaDir,
+            resolver = { resolvedAudio() },
+            fetcher = { _, destination, _ ->
+                started.complete(Unit)
+                Thread.sleep(150)
+                Files.write(destination, ByteArray(12) { 1 })
+                Files.write(
+                    destination.resolveSibling(destination.fileName.toString() + ".part"),
+                    ByteArray(4) { 2 },
+                )
+                WrittenMedia(destination, 12L, "c".repeat(64))
+            },
+        )
+
+        val job = launch(Dispatchers.IO) {
+            worker.transfer(
+                OfflineRecord.queued(
+                    SongItem(
+                        id = "cancel-song",
+                        title = "Song",
+                        artists = emptyList(),
+                        thumbnail = "",
+                    ),
+                    nowMs = 10L,
+                ),
+            )
+        }
+
+        started.await()
+        job.cancelAndJoin()
+
+        assertFalse(Files.exists(mediaDir.resolve("cancel-song.media")))
+        assertFalse(Files.exists(mediaDir.resolve("cancel-song.media.part")))
+    }
+
+    @Test
+    fun cancellationCleansPartialEvenWhenBlockingFetcherReturnsOrdinaryError() = runBlocking {
+        val mediaDir = Path.of(System.getProperty("java.io.tmpdir"), "offline-worker-cancel-error")
+        Files.createDirectories(mediaDir)
+        Files.deleteIfExists(mediaDir.resolve("cancel-error.media"))
+        Files.deleteIfExists(mediaDir.resolve("cancel-error.media.part"))
+        val started = CompletableDeferred<Unit>()
+
+        val worker = MetroListOfflineWorker(
+            mediaDir = mediaDir,
+            resolver = { resolvedAudio().copy(videoId = "cancel-error") },
+            fetcher = { _, destination, _ ->
+                started.complete(Unit)
+                Thread.sleep(150)
+                Files.write(
+                    destination.resolveSibling(destination.fileName.toString() + ".part"),
+                    ByteArray(4) { 2 },
+                )
+                error("late fetch failure")
+            },
+        )
+
+        val job = launch(Dispatchers.IO) {
+            runCatching {
+                worker.transfer(
+                    OfflineRecord.queued(
+                        SongItem(
+                            id = "cancel-error",
+                            title = "Song",
+                            artists = emptyList(),
+                            thumbnail = "",
+                        ),
+                        nowMs = 10L,
+                    ),
+                )
+            }
+        }
+
+        started.await()
+        job.cancelAndJoin()
+
+        assertFalse(Files.exists(mediaDir.resolve("cancel-error.media")))
+        assertFalse(Files.exists(mediaDir.resolve("cancel-error.media.part")))
+    }
+
+    @Test
+    fun streamResolutionTimeoutBecomesRetryableTransferFailure() = runBlocking {
+        val mediaDir = Path.of(System.getProperty("java.io.tmpdir"), "offline-worker-resolve-timeout")
+        Files.createDirectories(mediaDir)
+
+        val worker = MetroListOfflineWorker(
+            mediaDir = mediaDir,
+            resolver = {
+                kotlinx.coroutines.delay(5_000)
+                resolvedAudio()
+            },
+            fetcher = { _, destination ->
+                Files.write(destination, ByteArray(12) { 1 })
+                WrittenMedia(destination, 12L, "d".repeat(64))
+            },
+            resolveTimeoutMs = 30L,
+        )
+
+        val error = kotlin.test.assertFailsWith<com.metrolist.desktop.media.MediaTransferException> {
+            worker.transfer(
+                OfflineRecord.queued(
+                    SongItem(
+                        id = "timeout-song",
+                        title = "Song",
+                        artists = emptyList(),
+                        thumbnail = "",
+                    ),
+                    nowMs = 10L,
+                ),
+            )
+        }
+
+        assertTrue(error.message.orEmpty().contains("timed out", ignoreCase = true))
     }
 
     @Test

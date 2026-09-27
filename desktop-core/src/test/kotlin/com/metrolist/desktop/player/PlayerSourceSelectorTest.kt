@@ -1,5 +1,6 @@
 package com.metrolist.desktop.player
 
+import com.metrolist.desktop.offline.FormatSnapshot
 import com.metrolist.desktop.offline.OfflineRecord
 import com.metrolist.desktop.offline.OfflineState
 import com.metrolist.desktop.offline.OfflineStore
@@ -35,6 +36,11 @@ class PlayerSourceSelectorTest {
 
             assertIs<PlayerSource.Local>(source)
             assertEquals(media, source.path)
+            assertEquals(251, source.format?.itag)
+            assertEquals("audio/webm", source.format?.mimeType)
+            assertEquals("opus", source.format?.codecs)
+            assertEquals(144_000, source.format?.bitrate)
+            assertEquals(48_000, source.format?.sampleRate)
             assertEquals(0, onlineCalls)
             fixture.store.close()
         }
@@ -65,6 +71,10 @@ class PlayerSourceSelectorTest {
 
             assertIs<PlayerSource.Remote>(source)
             assertEquals(251, source.resolved.itag)
+            assertEquals("audio/webm", source.resolved.mimeType)
+            assertEquals("opus", source.resolved.codecs)
+            assertEquals(144_000, source.resolved.bitrate)
+            assertEquals(48_000, source.resolved.sampleRate)
             assertEquals(1, onlineCalls)
             fixture.store.close()
         }
@@ -96,6 +106,17 @@ class PlayerSourceSelectorTest {
         bytesDownloaded = bytes,
         contentLength = bytes,
         updateTimeMs = 2L,
+        format =
+            FormatSnapshot(
+                itag = 251,
+                mimeType = "audio/webm",
+                codecs = "opus",
+                bitrate = 144_000,
+                sampleRate = 48_000,
+                contentLength = bytes,
+                loudnessDb = null,
+                perceptualLoudnessDb = null,
+            ),
     )
 
     private fun resolved() =

@@ -21,6 +21,21 @@ fun main(args: Array<String>) {
     val cacheKey = "zip64-probe"
     val relativePath = "media3_cache/files/zip64probe000000/0_" + logicalBytes + "_0.span"
     val sha256 = sha256Zeros(logicalBytes)
+    val json =
+        Json {
+            encodeDefaults = true
+            explicitNulls = true
+        }
+    val metadataEntries = zip64MetadataEntries(json, cacheKey, logicalBytes)
+    val metadataFiles =
+        metadataEntries.map { (path, bytes) ->
+            PortableFile(
+                relativePath = path,
+                size = bytes.size.toLong(),
+                sha256 = sha256(bytes),
+                kind = "metadata",
+            )
+        }
 
     val span =
         PortableSpan(
@@ -53,14 +68,9 @@ fun main(args: Array<String>) {
             songIds = listOf(cacheKey),
             requestIds = listOf(cacheKey),
             exportedCacheResources = listOf(resource),
-            files = listOf(file),
+            files = metadataFiles + file,
         )
 
-    val json =
-        Json {
-            encodeDefaults = true
-            explicitNulls = true
-        }
     val manifestBytes = json.encodeToString(manifest).encodeToByteArray()
 
     Files.deleteIfExists(output)
@@ -70,6 +80,12 @@ fun main(args: Array<String>) {
         zip.putNextEntry(ZipEntry("manifest.json"))
         zip.write(manifestBytes)
         zip.closeEntry()
+
+        metadataEntries.forEach { (path, bytes) ->
+            zip.putNextEntry(ZipEntry(path))
+            zip.write(bytes)
+            zip.closeEntry()
+        }
 
         zip.putNextEntry(ZipEntry(relativePath))
         writeZeros(zip, logicalBytes)
@@ -87,6 +103,65 @@ fun main(args: Array<String>) {
             " sha256=" + sha256,
     )
 }
+
+private fun zip64MetadataEntries(
+    json: Json,
+    id: String,
+    contentLength: Long,
+): List<Pair<String, ByteArray>> {
+    val song = PortableSong(
+        id = id,
+        title = "Zip64 Probe",
+        duration = null,
+        thumbnailUrl = null,
+        thumbnailArtworkPath = null,
+        albumId = null,
+        albumName = null,
+        explicit = false,
+        year = null,
+        date = null,
+        dateModified = null,
+        dateDownload = LocalDateTime.now().toString(),
+        isVideo = false,
+        isEpisode = false,
+    )
+    val format = PortableFormat(
+        id = id,
+        itag = 251,
+        mimeType = "audio/webm",
+        codecs = "opus",
+        bitrate = 144_000,
+        sampleRate = 48_000,
+        contentLength = contentLength,
+        loudnessDb = null,
+        perceptualLoudnessDb = null,
+    )
+    val transfer = PortableTransfer(
+        requestId = id,
+        uri = id,
+        customCacheKey = id,
+        title = song.title,
+        contentLength = contentLength,
+        startTimeMs = 1L,
+        updateTimeMs = 2L,
+        bytesDownloaded = contentLength,
+    )
+
+    return listOf(
+        "metadata/songs.json" to json.encodeToString(SongsEnvelope(listOf(song))).encodeToByteArray(),
+        "metadata/artists.json" to json.encodeToString(ArtistsEnvelope(emptyList())).encodeToByteArray(),
+        "metadata/albums.json" to json.encodeToString(AlbumsEnvelope()).encodeToByteArray(),
+        "metadata/song_artist_map.json" to json.encodeToString(MapsEnvelope()).encodeToByteArray(),
+        "metadata/song_album_map.json" to json.encodeToString(MapsEnvelope()).encodeToByteArray(),
+        "metadata/formats.json" to json.encodeToString(FormatsEnvelope(listOf(format))).encodeToByteArray(),
+        "metadata/downloads.json" to json.encodeToString(TransfersEnvelope(listOf(transfer))).encodeToByteArray(),
+    )
+}
+
+private fun sha256(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it) }
 
 private fun sha256Zeros(length: Long): String {
     val digest = MessageDigest.getInstance("SHA-256")

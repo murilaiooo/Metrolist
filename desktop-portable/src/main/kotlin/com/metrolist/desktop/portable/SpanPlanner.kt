@@ -1,5 +1,6 @@
 package com.metrolist.desktop.portable
 
+import com.metrolist.desktop.artwork.ArtworkKey
 import java.security.MessageDigest
 
 data class SpanPlan(
@@ -46,7 +47,7 @@ object SpanPlanner {
         sha256(cacheKey.toByteArray(Charsets.UTF_8)).take(16)
 
     fun artworkFileName(thumbnailUrl: String): String =
-        sha256(thumbnailUrl.toByteArray(Charsets.UTF_8)) + ".img"
+        ArtworkKey.fileName(thumbnailUrl)
 
     fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")

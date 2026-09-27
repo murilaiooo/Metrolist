@@ -14,7 +14,8 @@ object AdvancedSessionParser {
     fun parse(text: String): AuthSession {
         val values = mutableMapOf<String, String>()
 
-        text.lineSequence().forEach { line ->
+        text.lineSequence().forEach { rawLine ->
+            val line = rawLine.trim()
             when {
                 line.startsWith(COOKIE) -> values[COOKIE] = line.substringAfter(COOKIE).trim()
                 line.startsWith(VISITOR) -> values[VISITOR] = line.substringAfter(VISITOR).trim()

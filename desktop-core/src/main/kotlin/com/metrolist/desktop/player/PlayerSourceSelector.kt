@@ -1,5 +1,6 @@
 package com.metrolist.desktop.player
 
+import com.metrolist.desktop.offline.FormatSnapshot
 import com.metrolist.desktop.offline.OfflineState
 import com.metrolist.desktop.offline.OfflineStore
 import com.metrolist.desktop.stream.ResolvedAudio
@@ -10,6 +11,7 @@ import java.nio.file.Path
 sealed interface PlayerSource {
     data class Local(
         val path: Path,
+        val format: FormatSnapshot?,
     ) : PlayerSource
 
     data class Remote(
@@ -35,7 +37,7 @@ class PlayerSourceSelector(
             if (localPath != null && Files.exists(localPath)) {
                 val expectedLength = record.contentLength
                 if (expectedLength == null || Files.size(localPath) == expectedLength) {
-                    return PlayerSource.Local(localPath)
+                    return PlayerSource.Local(localPath, record.format)
                 }
             }
         }

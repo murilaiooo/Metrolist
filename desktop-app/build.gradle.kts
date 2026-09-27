@@ -16,6 +16,7 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
 
     testImplementation(kotlin("test"))
 }
@@ -28,7 +29,7 @@ compose.desktop {
             targetFormats(TargetFormat.Msi)
             modules("java.sql", "java.net.http")
             packageName = "MetroListWindows"
-            packageVersion = "0.1.0"
+            packageVersion = "0.2.0"
             vendor = "MetroList Windows"
 
             appResourcesRootDir.set(
@@ -52,4 +53,12 @@ tasks.register<JavaExec>("uiDataProbe") {
     description = "Checks the real Home, Search, and Library feeds used by the desktop UI."
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.metrolist.desktop.UiDataProbeMainKt")
+}
+
+
+tasks.register<JavaExec>("downloadStageProbe") {
+    group = "verification"
+    description = "Diagnoses the active download resolver and first HTTP range."
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.metrolist.desktop.DownloadStageProbeMainKt")
 }

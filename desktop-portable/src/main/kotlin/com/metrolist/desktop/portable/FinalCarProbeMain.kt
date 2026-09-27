@@ -57,12 +57,16 @@ suspend fun main(args: Array<String>) {
             MetroListOfflineWorker(
                 mediaDir = runtime.resolve("media"),
                 resolver = resolver::resolve,
-                fetcher = fetcher::fetch,
+                fetcher = { resolved, destination, onProgress ->
+                    fetcher.fetch(resolved, destination, onProgress)
+                },
             )
 
         PersistentOfflineQueue(
             store = store,
-            worker = worker::transfer,
+            worker = { record, onProgress ->
+                worker.transfer(record, onProgress)
+            },
             maxConcurrent = 3,
         ).use { queue ->
             queue.enqueueAll(songs)

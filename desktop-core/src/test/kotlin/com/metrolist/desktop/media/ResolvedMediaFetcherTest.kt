@@ -7,6 +7,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 
 class ResolvedMediaFetcherTest {
     @Test
@@ -28,6 +29,34 @@ class ResolvedMediaFetcherTest {
         assertEquals(listOf(0L, 4L, 8L), starts)
         assertContentEquals(bytes, Files.readAllBytes(destination))
         assertEquals(10L, written.bytes)
+    }
+
+    @Test
+    fun reportsLiveByteProgressUntilComplete() {
+        val bytes = ByteArray(10) { it.toByte() }
+        val progress = mutableListOf<MediaTransferProgress>()
+        val destination = testPath("progress.media")
+
+        val transport = MediaRangeTransport { _, start, end ->
+            MediaRangeResponse(
+                206,
+                bytes.copyOfRange(start.toInt(), end.toInt() + 1),
+            )
+        }
+
+        ResolvedMediaFetcher(
+            transport = transport,
+            chunkSizeOverride = 4L,
+        ).fetch(
+            resolved = resolved(bytes.size.toLong()),
+            destination = destination,
+            onProgress = progress::add,
+        )
+
+        assertEquals(listOf(0L, 4L, 8L, 10L), progress.map { it.bytesDownloaded })
+        assertTrue(progress.all { it.totalBytes == 10L })
+        assertEquals(10L, progress.last().bytesDownloaded)
+        assertTrue(progress.drop(1).all { it.bytesPerSecond >= 0L })
     }
 
     @Test
@@ -58,6 +87,63 @@ class ResolvedMediaFetcherTest {
     }
 
     @Test
+    fun replacesPartialWhenServerIgnoresResumeRangeWithCompleteBody() {
+        val bytes = ByteArray(10) { (it + 20).toByte() }
+        val destination = testPath("ignored-range.media")
+        Files.write(
+            destination.resolveSibling("ignored-range.media.part"),
+            bytes.copyOfRange(0, 4),
+        )
+
+        val starts = mutableListOf<Long>()
+        val transport = MediaRangeTransport { _, start, _ ->
+            starts += start
+            MediaRangeResponse(200, bytes)
+        }
+
+        ResolvedMediaFetcher(
+            transport = transport,
+            chunkSizeOverride = 4L,
+        ).fetch(resolved(bytes.size.toLong()), destination)
+
+        assertEquals(listOf(4L), starts)
+        assertContentEquals(bytes, Files.readAllBytes(destination))
+    }
+
+    @Test
+    fun probesContentLengthWhenResolverDoesNotProvideIt() {
+        val bytes = ByteArray(10) { (it + 30).toByte() }
+        val destination = testPath("probe-length.media")
+        var probes = 0
+
+        val transport = object : MediaRangeTransport {
+            override fun probeLength(resolved: ResolvedAudio): Long? {
+                probes++
+                return bytes.size.toLong()
+            }
+
+            override fun fetch(
+                resolved: ResolvedAudio,
+                start: Long,
+                endInclusive: Long,
+            ): MediaRangeResponse =
+                MediaRangeResponse(
+                    206,
+                    bytes.copyOfRange(start.toInt(), endInclusive.toInt() + 1),
+                )
+        }
+
+        val written = ResolvedMediaFetcher(
+            transport = transport,
+            chunkSizeOverride = 4L,
+        ).fetch(resolved(null), destination)
+
+        assertEquals(1, probes)
+        assertEquals(10L, written.bytes)
+        assertContentEquals(bytes, Files.readAllBytes(destination))
+    }
+
+    @Test
     fun expiredResponseIsReportedForFreshResolution() {
         val destination = testPath("expired.media")
         val fetcher = ResolvedMediaFetcher(
@@ -72,7 +158,7 @@ class ResolvedMediaFetcherTest {
         }
     }
 
-    private fun resolved(length: Long) =
+    private fun resolved(length: Long?) =
         ResolvedAudio(
             videoId = "song-1",
             url = "https://redacted.invalid",
