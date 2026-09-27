@@ -1,5 +1,7 @@
 # MetroList Car APK Implementation Plan
 
+> **CURRENT STATUS:** Tasks 1-6 were implemented/committed through `ee8fc297b`. Task 7 has uncommitted follow-on work in the working tree. The transfer/library assumptions in later tasks predate the direct Car Library design and must not be executed as-is. Review `docs/superpowers/reviews/2026-09-27-metrolist-ecosystem-integration-audit.md` before resuming.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build MetroList Car 0.1.0 as an isolated, car-first Android head-unit product that safely imports Windows 0.2.2 `.metrolistbackup` archives, plays them fully offline, honors physical/system controls, and resumes playback after head-unit restart.

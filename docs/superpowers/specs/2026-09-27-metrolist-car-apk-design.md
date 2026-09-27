@@ -1,5 +1,7 @@
 # MetroList Car APK Design
 
+> **ECOSYSTEM REVIEW GATE:** This Car-specific design must now be read together with `docs/superpowers/reviews/2026-09-27-metrolist-ecosystem-integration-audit.md`. The audit identified cross-product ownership gaps that require an approved ecosystem contract before further architectural implementation resumes.
+
 Date: 2026-09-27
 
 ## 1. Purpose
@@ -7,15 +9,17 @@ Date: 2026-09-27
 MetroList Car is a dedicated Android head-unit product for the user's in-car multimedia system. It is not a tablet skin and not a replacement for the upstream Android app.
 
 The goal is a car-first player that:
-- imports Windows-generated `.metrolistbackup` archives safely;
-- plays the imported library fully offline;
+- supports Windows-generated `.metrolistbackup` archives as the legacy backup/restore compatibility path;
+- supports a new folder-based **MetroList Car Library** as the preferred high-volume Windows -> car transfer path;
+- reads Car Library media directly from a user-selected folder in the head unit's persistent local storage without duplicating multi-gigabyte audio into app-private storage;
+- plays the available library fully offline;
 - remains usable with unreliable or absent network connectivity;
 - restores queue, track, position, and play/pause intent after head-unit power loss;
 - treats physical media controls and system audio controls as first-class inputs;
 - uses large, predictable touch targets on unreliable Android head-unit display metrics;
 - keeps the approved Windows and standard Android products isolated and regression-safe.
 
-Windows 0.2.2 is the compatibility baseline. The Car product consumes its portable backup contract and must not require Windows changes merely to simplify Car implementation.
+Windows 0.2.2 remains the proven compatibility baseline. Its existing download/playback and `.metrolistbackup` behavior must not regress. The new high-quality-artwork preservation and Car Library folder exporter are explicitly scoped Windows additions because they remove the high-volume import bottleneck; they must be implemented alongside, not by rewriting, the proven pipeline.
 
 ## 2. Target hardware and operating assumptions
 
@@ -27,7 +31,7 @@ Primary target:
 - Android capabilities treated as API 28/29-class behavior even if firmware branding is misleading;
 - fixed landscape head-unit display;
 - touch plus physical head-unit/steering-wheel controls;
-- removable USB storage used for large offline library transfer.
+- large offline libraries are transferred into the head unit's persistent local storage before normal use; the transfer medium itself is not part of the runtime architecture.
 
 The head unit may report unreliable DPI, density, or physical display metrics. Car UI sizing must therefore not depend on phone/tablet classification or physical-DPI claims.
 ## 3. Product boundary
@@ -198,15 +202,23 @@ Car gets its own reader/validator implementation of this contract. The Windows e
 
 Compatibility is enforced through contract tests against real Windows-generated archives.
 
-## 12. Import entry point
+## 12. Library transfer entry points
 
-Car exposes a prominent `Import Windows Library` action.
+Car exposes two distinct paths:
+- **Open Car Library Folder** — preferred for normal Windows -> car use. The MetroList Car Library folder is first transferred into the head unit's persistent local storage. The user selects that local folder in Car; Car reads its manifest/index and uses the media in place without copying the full audio library into app-private storage.
+- **Import Windows Backup** — legacy/compatibility backup-and-restore path for `.metrolistbackup`.
 
-The file is selected using Android's Storage Access Framework so USB storage can be read without hard-coded filesystem paths or broad storage permissions.
+The existing archive importer remains available for backups, migrations, recovery, and compatibility. It is no longer the preferred high-volume transfer workflow.
 
-The importer accepts `.metrolistbackup` and works directly from the selected document URI. It must not require a second full-size copy of a multi-gigabyte archive inside app storage.
+For folder libraries, the selected folder in head-unit persistent storage is the authoritative media location. Car may maintain a small metadata/index/artwork cache for fast startup, but it must not silently duplicate the audio payload. If the folder is moved, deleted, corrupted, or access is lost, Car reports the library as unavailable and can recover when the same `libraryId` is selected/found again.
 
-Import runs in a dedicated foreground service with persistent progress reporting. It does not depend on WorkManager, JobScheduler, or PlatformScheduler.
+Car Library must have a stable library identity and a versioned manifest. Relative paths are used so the exported folder remains valid if it is copied or moved to a different valid location in head-unit storage.
+
+The local folder should be selected/accessed using the safest storage mechanism supported by the target Android firmware. Storage Access Framework may be used for persistent folder access where appropriate; the design must not depend on removable-media mount behavior.
+
+The legacy archive importer accepts `.metrolistbackup` and works directly from the selected document URI. It must not require a second full-size copy of a multi-gigabyte archive inside app storage.
+
+Legacy archive import runs in a dedicated foreground service with persistent progress reporting. It does not depend on WorkManager, JobScheduler, or PlatformScheduler.
 ## 13. Import validation
 
 Import uses a two-pass design.
@@ -267,22 +279,62 @@ The importer is idempotent by song ID:
 - new content is added;
 - repeated import does not create duplicate songs or relationships.
 
-## 16. Offline artwork
+## 16. High-quality offline artwork
 
-Portable artwork must remain available without network access.
+Artwork quality is a product requirement, not a storage optimization target. Windows should preserve the best practical source artwork instead of exporting a low-resolution thumbnail merely to save space.
 
-Car stores imported artwork in an app-owned deterministic location such as:
+For new downloads/exports:
+- prefer the highest-quality artwork URL/source available from the upstream metadata;
+- target approximately 1000x1000 or better when the source provides it;
+- never upscale a small thumbnail and call it high quality;
+- do not downscale a better original merely to reduce export size;
+- preserve enough metadata to distinguish the source/original artwork from UI thumbnails.
+
+Car Library stores high-quality artwork alongside the portable library so it remains available offline. Car may generate/cache smaller derivatives for dense list rows, but the large Now Playing surface must resolve to the high-quality local artwork when available.
+
+For legacy `.metrolistbackup` imports, Car stores imported artwork in an app-owned deterministic location such as:
 `filesDir/car-artwork/<songId>.img`
 
-The Car UI resolves artwork:
-1. imported local artwork;
-2. original remote thumbnail URL;
-3. placeholder.
+Artwork resolution order:
+1. high-quality local Car Library artwork from the active head-unit library folder;
+2. imported legacy local artwork;
+3. original remote thumbnail URL;
+4. placeholder.
 
-The original thumbnail URL remains unchanged in song metadata.
+The original remote thumbnail URL remains unchanged in song metadata.
+## 17. MetroList Car Library folder contract
 
-This avoids depending on undocumented Coil cache internals while preserving network artwork fallback when connectivity exists.
-## 17. Import interruption and recovery
+The preferred transfer format is a normal folder tree rather than a monolithic archive. A representative layout is:
+
+```text
+MetroList Car Library/
+├── library.json
+├── media/
+├── artwork/
+└── metadata/
+```
+
+The exact manifest schema is versioned before implementation. It must contain enough information for Car to build the usable catalog without scanning every audio file or extracting metadata from every media payload.
+
+At minimum the index represents:
+- stable library ID and format version;
+- song ID;
+- title, artist, album, duration, and ordering data;
+- relative media path;
+- relative high-quality artwork path when available;
+- playlists and playlist ordering where exported;
+- truthful audio format metadata already known by Windows;
+- integrity/size information needed to detect missing or damaged files.
+
+Windows export is incremental. Re-exporting an existing Car Library copies/writes only new or changed media/artwork/metadata and atomically replaces the final index after the export is internally consistent. Unchanged multi-gigabyte media is not rewritten.
+
+Car opening/refreshing a library is index-first. It should become browsable from the manifest quickly even with thousands of tracks. Refresh compares library/index identity and changed entries instead of performing a mandatory full import.
+
+The folder contract must use portable filenames/relative paths compatible with transfer from Windows into the target Android head unit's local storage. The design must not rely on a stable Windows drive letter or a particular Android absolute storage path.
+
+The existing `.metrolistbackup` format remains unchanged and supported as a separate compatibility path.
+
+## 18. Import interruption and recovery
 
 Large libraries can take long enough for ACC power loss, sleep, or process death to occur during import.
 
@@ -304,7 +356,7 @@ Discard removes only artifacts attributable to the incomplete transaction. It mu
 
 The importer must never leave Room claiming a song is downloaded while its Media3 cache/download-index state is incomplete.
 
-## 18. Online capabilities
+## 19. Online capabilities
 
 Car 0.1.0 retains selected online capabilities, but they are secondary to local playback.
 
@@ -316,14 +368,15 @@ Required product surfaces:
 - Online browsing;
 - Player;
 - Queue;
-- portable import;
+- Open Car Library Folder / Refresh Library;
+- legacy portable backup import;
 - Settings;
 - diagnostics.
 
 Features such as Cast, updater UI, recognition, Listen Together, social integrations, and experimental utilities are not exposed in the initial Car shell.
 
 They do not need to be physically deleted from shared source code for 0.1.0 unless they cause a demonstrated runtime problem.
-## 19. Diagnostics
+## 20. Diagnostics
 
 Car Settings includes a diagnostics section with:
 - MetroList Car semantic version;
@@ -341,7 +394,7 @@ Playback and import errors include the Car version and enough stage/context data
 
 Diagnostics must not expose authentication secrets, cookies, or private tokens.
 
-## 20. Test strategy
+## 21. Test strategy
 
 Portable contract tests cover:
 - real Windows-generated backup;
@@ -363,6 +416,17 @@ Importer integration tests verify:
 - rollback/recovery;
 - resume after interruption.
 
+Car Library contract/integration tests cover:
+- thousands-of-tracks manifest parsing without mandatory media-file scanning;
+- persistent access/reopen behavior for the selected local Car Library folder;
+- relative-path resolution when the Car Library folder is copied/moved within valid head-unit storage;
+- missing/moved/corrupt local-library file behavior and recovery when the same library is selected/found again;
+- incremental refresh with unchanged media left untouched;
+- missing/corrupt media detection without making the rest of the library unusable;
+- high-quality artwork selection and smaller derived UI-cache behavior;
+- playlist/order preservation;
+- exFAT/FAT-safe relative paths and filenames.
+
 Car-specific tests verify:
 - Car launcher;
 - Car version wiring;
@@ -372,7 +436,7 @@ Car-specific tests verify:
 - volume events are not consumed;
 - playback-state restore semantics;
 - Back does not stop music.
-## 21. Regression gates
+## 22. Regression gates
 
 Existing Android products remain green with:
 `testFossDebugUnitTest`
@@ -386,27 +450,27 @@ Car adds its own unit/integration/assembly gates.
 
 Windows/portable tests remain green because Windows 0.2.2 is the compatibility producer.
 
-No Windows architecture changes are part of the Car implementation unless a concrete, reproducible compatibility defect proves they are necessary.
+The existing Windows 0.2.2 download/playback/backup architecture remains the compatibility baseline. The new Car Library exporter and higher-quality artwork preservation are deliberate new compatibility features and must be isolated from the proven download pipeline. The legacy `.metrolistbackup` contract remains backward compatible.
 
-## 22. Physical head-unit acceptance sequence
+## 23. Physical head-unit acceptance sequence
 
 After local automated gates pass and only with explicit user authorization:
 1. install a versioned Car APK;
 2. verify launcher/display/touch sizing;
 3. run physical-button diagnostics and record real key/scan codes;
 4. verify system volume buttons remain system-controlled;
-5. import a small real Windows backup;
-6. verify local metadata and artwork;
+5. open a small real Car Library folder already transferred into head-unit storage and verify it becomes browsable without duplicating its audio payload;
+6. verify high-quality local artwork, metadata, playlists, and direct media playback;
 7. disable network and verify playback, seek, next/previous, queue;
-8. power-cycle or reproduce head-unit sleep/restart;
-9. verify queue/track/position and playing-vs-paused restoration;
-10. test interrupted import recovery;
-11. import the large real library;
-12. verify counts, storage, playback, and reimport idempotency.
+8. restart the app/head unit and verify the same local Car Library reopens without reimporting or duplicating its audio payload;
+9. refresh an incrementally updated Car Library and verify unchanged media is not re-imported/copied;
+10. power-cycle or reproduce head-unit sleep/restart and verify queue/track/position plus playing-vs-paused restoration;
+11. test a small legacy `.metrolistbackup` import and interrupted-import recovery;
+12. open the large real Car Library and verify startup/refresh performance, counts, storage use, and playback.
 
 Confirmed non-standard key mappings may be added in a subsequent versioned Car build after measurement.
 
-## 23. Safety and release rules
+## 24. Safety and release rules
 
 Do not reset, clean, or delete unrelated user data.
 
@@ -419,19 +483,19 @@ Do not change the Windows 0.2.2 portable format without an explicit versioned co
 Root-cause failures rather than bypassing them with destructive cleanup.
 
 Behavior changes use tests first where practical, and completion claims require fresh verification evidence.
-## 24. Non-goals for Car 0.1.0
+## 25. Non-goals for Car 0.1.0
 
 Car 0.1.0 does not aim to:
 - redesign the standard Android mobile app;
 - replace Android's system volume UI;
 - emulate Android Auto as the primary display surface;
 - guess CANBUS/vendor key mappings;
-- refactor Windows 0.2.2;
-- redesign the portable backup format;
+- refactor the proven Windows 0.2.2 download/playback pipeline;
+- replace or redesign the legacy portable backup format;
 - delete every unused mobile feature from shared source;
 - introduce a new Room schema without demonstrated need.
 
-## 25. Success criteria
+## 26. Success criteria
 
 Car 0.1.0 is successful when:
 - it installs independently from the standard Android app;
@@ -439,12 +503,16 @@ Car 0.1.0 is successful when:
 - physical standard media controls work through MediaSession;
 - system volume remains controlled by the head unit;
 - measured non-standard buttons can be diagnosed and mapped safely;
-- a Windows 0.2.2 portable backup imports without direct cache-file hacks;
-- imported songs appear as real completed Media3 downloads;
-- imported artwork and audio work with network disabled;
-- large imports can resume after interruption;
-- reimport is safe and idempotent;
+- Windows can produce a versioned Car Library folder with high-quality source artwork and an index suitable for thousands of tracks;
+- Car can open that folder directly from head-unit persistent local storage without duplicating the audio payload into app-private storage;
+- the folder library becomes browsable quickly from its index and supports incremental refresh;
+- high-quality local artwork and audio work with network disabled;
+- app/head-unit restart preserves access to the same local library, and moved/lost folders produce a clear recoverable unavailable state;
+- a Windows 0.2.2 portable backup still imports without direct cache-file hacks;
+- legacy imported songs appear as real completed Media3 downloads;
+- large legacy imports can resume after interruption;
+- legacy reimport is safe and idempotent;
 - playback restores queue, track, position, and prior playing/paused intent after restart;
 - standard Android and Windows regression gates remain green.
 
-This document defines the architecture and behavior required before implementation planning begins.
+This revision supersedes the transfer/artwork assumptions in the existing Car implementation plan. Per the Superpowers design gate, the implementation plan must be revised only after this written spec revision is reviewed and approved. No product implementation is authorized by this documentation update.
