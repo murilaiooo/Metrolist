@@ -99,6 +99,7 @@ import com.metrolist.innertube.models.SongItem
 import com.metrolist.innertube.models.WatchEndpoint
 import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.lastfm.LastFM
+import com.metrolist.music.BuildConfig
 import com.metrolist.music.MainActivity
 import com.metrolist.music.R
 import com.metrolist.music.constants.AddToPlaylistPosition
@@ -1248,6 +1249,11 @@ class MusicService :
 
                         if (playerState.currentMediaItemIndex < player.mediaItemCount) {
                             player.seekTo(playerState.currentMediaItemIndex, playerState.currentPosition)
+                            player.playWhenReady =
+                                restoredPlayWhenReady(
+                                    isCar = BuildConfig.IS_CAR,
+                                    savedPlayWhenReady = playerState.playWhenReady,
+                                )
                         }
                     }
                 }.onFailure { error ->
