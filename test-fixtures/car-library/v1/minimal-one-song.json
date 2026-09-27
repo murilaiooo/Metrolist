@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "libraryId": "library-1",
+  "revision": "rev-1",
+  "createdAt": "2026-09-27T00:00:00Z",
+  "updatedAt": "2026-09-27T00:00:00Z",
+  "producer": { "product": "MetroList Windows", "version": "0.2.3" },
+  "songs": [
+    {
+      "id": "song-1",
+      "title": "Song 1",
+      "artists": [{ "id": "artist-1", "name": "Artist 1" }],
+      "album": { "id": "album-1", "name": "Album 1" },
+      "duration": 180,
+      "explicit": false,
+      "isVideo": false,
+      "isEpisode": false,
+      "mediaPath": "media/song-1.m4a",
+      "artworkPath": null,
+      "mimeType": "audio/mp4",
+      "codecs": "mp4a.40.2",
+      "bitrate": 128000,
+      "sampleRate": 44100,
+      "fileSize": 4,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "playlists": []
+}

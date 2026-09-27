@@ -1,0 +1,55 @@
+{
+  "formatVersion": 1,
+  "libraryId": "library-1",
+  "revision": "rev-2",
+  "createdAt": "2026-09-27T00:00:00Z",
+  "updatedAt": "2026-09-27T00:01:00Z",
+  "producer": { "product": "MetroList Windows", "version": "0.2.3" },
+  "songs": [
+    {
+      "id": "song-1",
+      "title": "Song 1",
+      "artists": [{ "id": "artist-1", "name": "Artist 1" }],
+      "album": null,
+      "duration": 180,
+      "explicit": false,
+      "isVideo": false,
+      "isEpisode": false,
+      "mediaPath": "media/song-1.m4a",
+      "artworkPath": "artwork/album-1.jpg",
+      "mimeType": "audio/mp4",
+      "codecs": "mp4a.40.2",
+      "bitrate": 128000,
+      "sampleRate": 44100,
+      "fileSize": 4,
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "song-2",
+      "title": "Song 2",
+      "artists": [{ "id": "artist-2", "name": "Artist 2" }],
+      "album": null,
+      "duration": 200,
+      "explicit": true,
+      "isVideo": false,
+      "isEpisode": false,
+      "mediaPath": "media/song-2.webm",
+      "artworkPath": "artwork/album-1.jpg",
+      "mimeType": "audio/webm",
+      "codecs": "opus",
+      "bitrate": 160000,
+      "sampleRate": 48000,
+      "fileSize": 8,
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  ],
+  "playlists": [
+    {
+      "id": "playlist-1",
+      "name": "Road",
+      "songIds": ["song-2", "song-1"],
+      "youtubePlaylistId": null,
+      "sourceRevision": "windows-playlist-7"
+    }
+  ]
+}
