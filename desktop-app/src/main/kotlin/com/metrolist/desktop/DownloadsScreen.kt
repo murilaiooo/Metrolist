@@ -222,6 +222,12 @@ internal fun DownloadsView(
     var exportProgress by remember { mutableStateOf<PortableExportProgress?>(null) }
     var exportError by remember { mutableStateOf<String?>(null) }
     var exportResult by remember { mutableStateOf<Path?>(null) }
+    var carLibraryExportRunning by remember { mutableStateOf(false) }
+    var carLibraryExportFraction by remember { mutableStateOf<Float?>(null) }
+    var carLibraryExportStatus by remember { mutableStateOf<String?>(null) }
+    var carLibraryExportError by remember { mutableStateOf<String?>(null) }
+    var carLibraryExportResult by remember { mutableStateOf<Path?>(null) }
+
 
     val completed = downloads.count { it.state == OfflineState.COMPLETED }
     val queued = downloads.count { it.state == OfflineState.QUEUED }
@@ -319,6 +325,65 @@ internal fun DownloadsView(
         }
     }
 
+    fun beginCarLibraryExport() {
+        val destination = chooseCarLibraryDestination() ?: return
+
+        carLibraryExportRunning = true
+        carLibraryExportFraction = 0f
+        carLibraryExportStatus = "Preparing Car Library..."
+        carLibraryExportError = null
+        carLibraryExportResult = null
+
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    runtime.exportCarLibrary(destination) { progress ->
+                        val shouldUpdate =
+                            progress.phase.name != "COPYING" ||
+                                progress.completedTracks % 25 == 0 ||
+                                progress.completedTracks == progress.totalTracks
+                        if (shouldUpdate) {
+                            val fraction =
+                                if (progress.totalTracks > 0) {
+                                    progress.completedTracks.toFloat() / progress.totalTracks.toFloat()
+                                } else {
+                                    null
+                                }
+                            val status =
+                                progress.completedTracks.toString() + "/" +
+                                    progress.totalTracks +
+                                    " tracks · " +
+                                    progress.copiedFiles +
+                                    " copied · " +
+                                    progress.reusedFiles +
+                                    " reused"
+                            scope.launch {
+                                carLibraryExportFraction = fraction
+                                carLibraryExportStatus = status
+                            }
+                        }
+                    }
+                }
+            }.onSuccess { result ->
+                carLibraryExportRunning = false
+                carLibraryExportFraction = 1f
+                carLibraryExportStatus =
+                    "Car Library ready · " +
+                        result.manifest.songs.size +
+                        " tracks · " +
+                        result.copiedFiles +
+                        " copied · " +
+                        result.reusedFiles +
+                        " reused"
+                carLibraryExportResult = destination
+            }.onFailure { error ->
+                carLibraryExportRunning = false
+                carLibraryExportFraction = null
+                carLibraryExportError = exportErrorMessage(error)
+            }
+        }
+    }
+
     Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -338,17 +403,63 @@ internal fun DownloadsView(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Button(
-                onClick = ::chooseAndPrepareExport,
-                enabled = completed > 0 && !exportRunning,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.FileUpload,
-                    contentDescription = null,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text("Export backup")
+                Button(
+                    onClick = ::beginCarLibraryExport,
+                    enabled = completed > 0 && !carLibraryExportRunning && !exportRunning,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.FileUpload,
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (carLibraryExportRunning) "Exporting..." else "Export Car Library")
+                }
+                OutlinedButton(
+                    onClick = ::chooseAndPrepareExport,
+                    enabled = completed > 0 && !exportRunning && !carLibraryExportRunning,
+                ) {
+                    Text("Backup file")
+                }
             }
+        }
+
+        carLibraryExportStatus?.let { status ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                status,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (carLibraryExportRunning) {
+            val fraction = carLibraryExportFraction
+            if (fraction != null) {
+                Spacer(Modifier.height(4.dp))
+                LinearProgressIndicator(
+                    progress = { fraction.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(4.dp),
+                )
+            }
+        }
+        carLibraryExportError?.let { message ->
+            Spacer(Modifier.height(6.dp))
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        carLibraryExportResult?.let { path ->
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Car Library folder: " + path,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         if (failed > 0 || downloading + queued > 0 || completed > 0) {

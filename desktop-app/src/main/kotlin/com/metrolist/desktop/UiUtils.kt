@@ -66,6 +66,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import javax.swing.JFileChooser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -92,6 +93,30 @@ internal fun chooseBackupDestination(): Path? {
     return Path.of(directory, file)
 }
 
+internal fun chooseCarLibraryDestination(): Path? {
+    val chooser =
+        JFileChooser().apply {
+            dialogTitle = "Choose where to create MetroList Car Library"
+            fileSelectionMode = JFileChooser.DIRECTORIES_ONLY
+            isAcceptAllFileFilterUsed = false
+            selectedFile = Path.of(System.getProperty("user.home"), "Desktop").toFile()
+        }
+
+    if (chooser.showDialog(null, "Export here") != JFileChooser.APPROVE_OPTION) {
+        return null
+    }
+
+    val selected = chooser.selectedFile?.toPath() ?: return null
+    return if (
+        selected.fileName
+            ?.toString()
+            ?.equals("MetroList Car Library", ignoreCase = true) == true
+    ) {
+        selected
+    } else {
+        selected.resolve("MetroList Car Library")
+    }
+}
 internal fun catalogSubtitle(item: YTItem): String =
     when (item) {
         is SongItem ->

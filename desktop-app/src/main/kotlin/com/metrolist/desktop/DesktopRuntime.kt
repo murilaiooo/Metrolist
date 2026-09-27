@@ -30,6 +30,9 @@ import com.metrolist.desktop.player.PlayerState
 import com.metrolist.desktop.portable.OfflineBackupService
 import com.metrolist.desktop.portable.PortableExportEstimate
 import com.metrolist.desktop.portable.PortableExportProgress
+import com.metrolist.desktop.portable.carlibrary.CarLibraryExportProgress
+import com.metrolist.desktop.portable.carlibrary.CarLibraryExportResult
+import com.metrolist.desktop.portable.carlibrary.OfflineCarLibraryService
 import com.metrolist.desktop.stream.DesktopInnerTubeXPlayer
 import com.metrolist.desktop.stream.DesktopPoTokenProvider
 import com.metrolist.innertube.YouTube
@@ -483,6 +486,20 @@ class DesktopRuntime private constructor(
             onProgress = onProgress,
         )
 
+    fun exportCarLibrary(
+        destination: Path,
+        onProgress: (CarLibraryExportProgress) -> Unit = {},
+    ): CarLibraryExportResult =
+        OfflineCarLibraryService(
+            store = offlineStore,
+            producerVersion = METROLIST_WINDOWS_VERSION,
+            artworkProvider = artworkCache::ensure,
+            playlistsProvider = localPlaylistService::playlists,
+            playlistSongsProvider = localPlaylistService::songs,
+        ).exportAll(
+            destination = destination,
+            onProgress = onProgress,
+        )
     override fun close() {
         player?.close()
         queue.close()
