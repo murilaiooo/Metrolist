@@ -2,7 +2,7 @@
 
 ## 0.2.3 — 2026-09-27
 
-Status: TEST build awaiting user manual login smoke.
+Status: approved by user after manual installed-login smoke.
 
 Root cause:
 - the packaged Auth Helper let WebView2 choose its default user-data directory beside the executable;
@@ -15,7 +15,9 @@ Changes:
 - added a regression self-test that rejects a WebView2 profile outside LocalAppData.
 
 Manual verification:
-- pending user login smoke on 0.2.3 TEST.
+- user installed the 0.2.3 TEST MSI and confirmed the YouTube Music sign-in flow works;
+- the previous "Authentication helper failed with exit 1" failure no longer blocked the login window;
+- the app was intentionally left running after approval while the user continued downloading music; that active download session was not interrupted for further testing.
 
 Automated verification:
 - RED observed before implementation: Auth Helper build failed because the new profile contract did not exist;
