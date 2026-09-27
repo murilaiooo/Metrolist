@@ -33,7 +33,8 @@ internal sealed class AuthWindow : Form
     {
         try
         {
-            await webView.EnsureCoreWebView2Async();
+            var environment = await WebView2Profile.CreateEnvironmentAsync();
+            await webView.EnsureCoreWebView2Async(environment);
             webView.CoreWebView2.NavigationCompleted += async (_, _) =>
             {
                 var host = webView.Source?.Host;
