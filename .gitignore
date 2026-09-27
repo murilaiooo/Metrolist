@@ -118,6 +118,9 @@ app/src/main/cpp/coverart/
 .mcp.json
 *.har
 
+# Generated MetroList desktop probe exports
+runtime-dev/queue-export-*/
+
 # MetroList Windows local/runtime artifacts
 .worktrees/
 .superpowers/
