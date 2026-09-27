@@ -1,5 +1,29 @@
 # MetroList Windows Release History
 
+## 0.2.3 — 2026-09-27
+
+Status: TEST build awaiting user manual login smoke.
+
+Root cause:
+- the packaged Auth Helper let WebView2 choose its default user-data directory beside the executable;
+- in the installed app that directory is under `C:\Program Files\MetroListWindows\...`, where a normal user cannot write;
+- WebView2 therefore failed before the YouTube Music login window could open, and the desktop app surfaced helper exit 1.
+
+Changes:
+- moved the Auth Helper WebView2 user-data folder to `%LOCALAPPDATA%\MetroListWindows\WebView2`;
+- applied the same profile location to both interactive login and PO-token generation;
+- added a regression self-test that rejects a WebView2 profile outside LocalAppData.
+
+Manual verification:
+- pending user login smoke on 0.2.3 TEST.
+
+Automated verification:
+- RED observed before implementation: Auth Helper build failed because the new profile contract did not exist;
+- focused Auth Helper build + self-test passed after the fix;
+- Windows core/export/app tests and 0.2.3 distributable + MSI packaging: BUILD SUCCESSFUL;
+- package verifier: `WINDOWS_PACKAGE_VERIFY_OK`, packaged executable reports `APP_VERSION=0.2.3`;
+- packaged Auth Helper stayed alive with the YouTube Music login window responsive and created its profile under LocalAppData instead of Program Files.
+
 ## 0.2.2 — 2026-09-27
 
 Status: approved by user after manual high-volume download recovery smoke.

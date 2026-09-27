@@ -32,6 +32,17 @@ internal static class AuthProtocol
         var poTokenResult = PoTokenProtocol.SelfTest();
         if (poTokenResult != 0) return poTokenResult;
 
+        var webViewUserDataFolder = WebView2Profile.UserDataFolder();
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!Path.GetFullPath(webViewUserDataFolder).StartsWith(
+                Path.GetFullPath(localAppData),
+                StringComparison.OrdinalIgnoreCase
+            )) return 30;
+        if (!webViewUserDataFolder.EndsWith(
+                Path.Combine("MetroListWindows", "WebView2"),
+                StringComparison.OrdinalIgnoreCase
+            )) return 31;
+
         Console.WriteLine("SELF_TEST_OK");
         return 0;
     }

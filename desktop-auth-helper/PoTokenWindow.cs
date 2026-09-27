@@ -49,7 +49,8 @@ internal sealed class PoTokenWindow : Form
         try
         {
             timeoutTimer.Start();
-            await webView.EnsureCoreWebView2Async();
+            var environment = await WebView2Profile.CreateEnvironmentAsync();
+            await webView.EnsureCoreWebView2Async(environment);
 
             var core = webView.CoreWebView2;
             core.Settings.AreDefaultContextMenusEnabled = false;
