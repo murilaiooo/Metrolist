@@ -3471,6 +3471,17 @@ class MusicService :
         }
     }
 
+    private fun createPlaybackDataSourceFactory(): DataSource.Factory =
+        PlaybackDataSourceRouterFactory(
+            cachedFactory = createCacheDataSource(),
+            directFactory =
+                DefaultDataSource.Factory(
+                    this,
+                    OkHttpDataSource.Factory(
+                        OkHttpClient.Builder().build(),
+                    ),
+                ),
+        )
     private fun createCacheDataSource(): CacheDataSource.Factory =
         CacheDataSource
             .Factory()
@@ -3782,7 +3793,11 @@ class MusicService :
         normalizationProcessor: VolumeNormalizationAudioProcessor,
         playerProvider: () -> ExoPlayer?,
     ): DataSource.Factory {
-        return ResolvingDataSource.Factory(createCacheDataSource()) { dataSpec ->
+        return ResolvingDataSource.Factory(createPlaybackDataSourceFactory()) { dataSpec ->
+            if (isDirectLocalMediaUri(dataSpec.uri)) {
+                return@Factory dataSpec
+            }
+
             val mediaId = dataSpec.key ?: error("No media id")
             val storedFormat = runBlocking(Dispatchers.IO) { database.format(mediaId).first() }
             applyAudioNormalizationBeforePlayback(
