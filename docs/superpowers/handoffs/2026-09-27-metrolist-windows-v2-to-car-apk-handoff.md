@@ -33,7 +33,7 @@ Result: BUILD SUCCESSFUL, 205 actionable tasks.
 
 `git diff --check` passed; only normal CRLF warnings were present.
 
-The Windows release version is `0.2.0`. `MetroListWindows-0.2.0.msi` was generated from `main` and passed `WINDOWS_PACKAGE_VERIFY_OK`; it was not installed automatically.
+The current Windows release version is `0.2.1`. `MetroListWindows-0.2.1.msi` was generated from `main`, passed `WINDOWS_PACKAGE_VERIFY_OK` with `APP_VERSION=0.2.1`, and was installed successfully while preserving user data.
 The V2 commits were fast-forwarded into local `main`. Nothing was pushed to the remote.
 
 ## Windows behavior that must be preserved
@@ -58,6 +58,10 @@ If the car app needs additional data, first inspect the current portable models/
 ## Next phase goal
 Design and implement the future car-focused Android APK as a separate product surface, optimized for a landscape in-car display and offline playback/import from MetroList backup.
 
+## Versioning requirement
+Read `docs/superpowers/releases/versioning-policy.md` before the first Car APK build.
+The Car APK must use its own tracked semantic version, show the exact version discreetly in the car UI, and include it in diagnostic/error reporting. Do not reuse the Windows version or the upstream Android app's 13.x version as the Car product version.
+
 The next conversation should begin with discovery/design, not immediate coding:
 1. Read this handoff and the final V2 handoff.
 2. Inspect the current Android app architecture and any existing car/import code.
@@ -81,4 +85,4 @@ The next conversation should begin with discovery/design, not immediate coding:
 Continue the MetroList project from `I:\codex\metrolist-windows` on `main`. First read `docs/superpowers/handoffs/2026-09-27-metrolist-windows-v2-to-car-apk-handoff.md` and `docs/superpowers/handoffs/2026-09-27-metrolist-windows-v2-final-handoff.md`. Invoke Superpowers before acting. Windows V2 is complete, user-approved, committed, and promoted to local `main` as the baseline. Do not regress the Windows V2 or change the `.metrolistbackup` contract casually. Do not push, install, or start unrelated refactors without explicit authorization. Start the car APK phase with discovery and design: inspect the existing Android architecture, current backup/import path, portable backup models/validator, and any existing car-oriented code. Then write a focused design/spec and implementation plan for a landscape, touch-first, offline-first car experience that imports the existing `.metrolistbackup` format without regressing Android or Windows compatibility. Do not start implementation until the design/plan is coherent and grounded in the existing code.
 
 ## Final note
-The earlier keep-as-is decision was superseded by explicit user authorization to promote V2. Windows V2 is now on local `main`; the former feature worktree can be cleaned up after final merged-result verification.
+The earlier keep-as-is decision was superseded by explicit user authorization to promote V2. Windows V2 is on local `main`; the former feature branch/worktree has already been removed after merged-result verification.

@@ -154,6 +154,7 @@ internal fun CatalogGridCard(
 ) {
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by hoverInteraction.collectIsHoveredAsState()
+    var actionMenuExpanded by remember { mutableStateOf(false) }
     val target =
         when (item) {
             is AlbumItem -> CatalogActionTarget.ALBUM
@@ -235,8 +236,13 @@ internal fun CatalogGridCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (hovered) {
-                        CatalogActionMenu(actions = actions, onAction = handleAction)
+                    if (shouldRenderCatalogActionMenu(hovered, actionMenuExpanded)) {
+                        CatalogActionMenu(
+                            actions = actions,
+                            expanded = actionMenuExpanded,
+                            onExpandedChange = { actionMenuExpanded = it },
+                            onAction = handleAction,
+                        )
                     }
                 }
             }
@@ -309,6 +315,7 @@ private fun RemotePlaylistGridCard(
 ) {
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by hoverInteraction.collectIsHoveredAsState()
+    var actionMenuExpanded by remember { mutableStateOf(false) }
     val target = CatalogActionTarget.YOUTUBE_PLAYLIST
     val actions =
         availableCatalogActions(
@@ -380,8 +387,13 @@ private fun RemotePlaylistGridCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (hovered) {
-                        CatalogActionMenu(actions = actions, onAction = handleAction)
+                    if (shouldRenderCatalogActionMenu(hovered, actionMenuExpanded)) {
+                        CatalogActionMenu(
+                            actions = actions,
+                            expanded = actionMenuExpanded,
+                            onExpandedChange = { actionMenuExpanded = it },
+                            onAction = handleAction,
+                        )
                     }
                 }
             }

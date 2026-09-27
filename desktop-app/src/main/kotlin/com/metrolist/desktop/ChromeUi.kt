@@ -116,6 +116,11 @@ internal fun LoginPanel(
             "MetroList Windows",
             style = MaterialTheme.typography.headlineLarge,
         )
+        Text(
+            appVersionLabel(METROLIST_WINDOWS_VERSION),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         Spacer(Modifier.height(12.dp))
         Text("Sign in to YouTube Music to browse, play, and download your library.")
         Spacer(Modifier.height(20.dp))
@@ -254,7 +259,7 @@ internal fun NavigationPanel(
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        "Windows",
+                        "Windows · ${appVersionLabel(METROLIST_WINDOWS_VERSION)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

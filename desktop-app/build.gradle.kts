@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.WriteProperties
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -6,8 +7,27 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+val metroListWindowsVersion = providers.gradleProperty("metrolistWindowsVersion").get()
+val generatedVersionResources = layout.buildDirectory.dir("generated/metrolistVersionResources")
+
+val generateMetroListVersionResource =
+    tasks.register<WriteProperties>("generateMetroListVersionResource") {
+        destinationFile.set(
+            generatedVersionResources.map {
+                it.file("metrolist-version.properties")
+            },
+        )
+        property("version", metroListWindowsVersion)
+    }
+
 kotlin {
     jvmToolchain(21)
+}
+
+sourceSets["main"].resources.srcDir(generatedVersionResources)
+
+tasks.named("processResources") {
+    dependsOn(generateMetroListVersionResource)
 }
 
 dependencies {
@@ -29,7 +49,7 @@ compose.desktop {
             targetFormats(TargetFormat.Msi)
             modules("java.sql", "java.net.http")
             packageName = "MetroListWindows"
-            packageVersion = "0.2.0"
+            packageVersion = metroListWindowsVersion
             vendor = "MetroList Windows"
 
             appResourcesRootDir.set(

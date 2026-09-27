@@ -54,6 +54,7 @@ internal fun CatalogItemRow(
     val scope = rememberCoroutineScope()
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by hoverInteraction.collectIsHoveredAsState()
+    var actionMenuExpanded by remember { mutableStateOf(false) }
     val target = catalogActionTarget(item)
     val actionCapabilities =
         catalogActionCapabilities(item, downloadRecord).let { capabilities ->
@@ -158,8 +159,13 @@ internal fun CatalogItemRow(
                     }
                 }
 
-                if (hovered) {
-                    CatalogActionMenu(actions = actions, onAction = handleAction)
+                if (shouldRenderCatalogActionMenu(hovered, actionMenuExpanded)) {
+                    CatalogActionMenu(
+                        actions = actions,
+                        expanded = actionMenuExpanded,
+                        onExpandedChange = { actionMenuExpanded = it },
+                        onAction = handleAction,
+                    )
                 }
             }
         }
@@ -180,6 +186,7 @@ internal fun SongRow(
     val scope = rememberCoroutineScope()
     val hoverInteraction = remember { MutableInteractionSource() }
     val hovered by hoverInteraction.collectIsHoveredAsState()
+    var actionMenuExpanded by remember { mutableStateOf(false) }
     val target =
         if (onRemoveFromPlaylist == null) {
             CatalogActionTarget.SONG
@@ -289,7 +296,14 @@ internal fun SongRow(
                             Icon(Icons.Rounded.ArrowDownward, contentDescription = "Move down")
                         }
                     }
-                    CatalogActionMenu(actions = actions, onAction = handleAction)
+                }
+                if (shouldRenderCatalogActionMenu(hovered, actionMenuExpanded)) {
+                    CatalogActionMenu(
+                        actions = actions,
+                        expanded = actionMenuExpanded,
+                        onExpandedChange = { actionMenuExpanded = it },
+                        onAction = handleAction,
+                    )
                 }
             }
         }

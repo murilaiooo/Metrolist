@@ -122,4 +122,11 @@ class CatalogActionsTest {
             availableCatalogActions(CatalogActionTarget.SONG, CatalogActionCapabilities()),
         )
     }
+
+    @Test
+    fun expandedActionMenuStaysRenderedAfterPointerLeavesRow() {
+        assertEquals(true, shouldRenderCatalogActionMenu(hovered = true, expanded = false))
+        assertEquals(true, shouldRenderCatalogActionMenu(hovered = false, expanded = true))
+        assertEquals(false, shouldRenderCatalogActionMenu(hovered = false, expanded = false))
+    }
 }

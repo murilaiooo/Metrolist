@@ -18,10 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
@@ -113,16 +109,22 @@ internal fun CatalogContextArea(
     )
 }
 
+internal fun shouldRenderCatalogActionMenu(
+    hovered: Boolean,
+    expanded: Boolean,
+): Boolean = hovered || expanded
+
 @Composable
 internal fun CatalogActionMenu(
     actions: List<CatalogAction>,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onAction: (CatalogAction) -> Unit,
 ) {
     if (actions.isEmpty()) return
 
-    var expanded by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { expanded = true }) {
+        IconButton(onClick = { onExpandedChange(true) }) {
             Icon(
                 imageVector = Icons.Rounded.MoreVert,
                 contentDescription = "More actions",
@@ -130,7 +132,7 @@ internal fun CatalogActionMenu(
         }
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false },
+            onDismissRequest = { onExpandedChange(false) },
         ) {
             actions.forEach { action ->
                 DropdownMenuItem(
@@ -142,7 +144,7 @@ internal fun CatalogActionMenu(
                         )
                     },
                     onClick = {
-                        expanded = false
+                        onExpandedChange(false)
                         onAction(action)
                     },
                 )

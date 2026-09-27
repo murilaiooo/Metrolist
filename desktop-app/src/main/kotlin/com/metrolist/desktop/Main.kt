@@ -17,6 +17,11 @@ import java.nio.file.Path
 import kotlin.system.exitProcess
 
 fun main(args: Array<String>) {
+    if ("--version" in args) {
+        println(METROLIST_WINDOWS_VERSION)
+        exitProcess(0)
+    }
+
     val projectRoot = Path.of(System.getProperty("user.dir"))
 
     if ("--startup-check" in args) {

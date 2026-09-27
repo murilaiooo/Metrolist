@@ -8,14 +8,14 @@ V2 code baseline after promotion: `9d30d5109`
 ## Status
 V2 Plans 01–05 are implemented and accepted.
 The user manually approved Plan 04 Explore and, on 2026-09-27, confirmed the final Plan 05 smoke with “tudo certo”.
-During Plan 05 itself no promotion was performed. After final user acceptance, the user explicitly authorized release promotion: V2 was committed, versioned as `0.2.0`, and fast-forwarded into local `main`. Nothing was pushed to the remote.
+During Plan 05 itself no promotion was performed. After final user acceptance, the user explicitly authorized release promotion: V2 was committed, versioned as `0.2.0`, and fast-forwarded into local `main`. The post-release `0.2.1` hotfix adds action-menu reliability and formal app-version traceability. Nothing was pushed to the remote.
 
 ## Final release build
 Executable:
 `I:\codex\metrolist-windows\desktop-app\build\compose\binaries\main\app\MetroListWindows\MetroListWindows.exe`
 
 MSI:
-`I:\codex\metrolist-windows\desktop-app\build\compose\binaries\main\msi\MetroListWindows-0.2.0.msi`
+`I:\codex\metrolist-windows\desktop-app\build\compose\binaries\main\msi\MetroListWindows-0.2.1.msi`
 
 The final app-image and MSI are built from `main`. The package verifier reports `WINDOWS_PACKAGE_VERIFY_OK` with the pinned mpv hash and packaged Auth Helper/WebView2 runtime.
 
@@ -63,7 +63,7 @@ Final app-image contains the packaged Auth Helper, WebView2 loader, and `libmpv-
 
 ## Release status / deferred work
 No blocker remains for V2 acceptance.
-The release version is `0.2.0`, committed and promoted to local `main`. The MSI has been generated and package-verified, but it has not been installed automatically on Windows.
+The current Windows release line is `0.2.1`. Its MSI was generated, package-verified with `APP_VERSION=0.2.1`, and installed over `0.2.0` without changing the existing session/library/offline databases. Version policy and history live under `docs/superpowers/releases/`.
 The former `feature/windows-v1` worktree is no longer the source of truth; `main` is the Windows V2 baseline.
 
 ## Next phase
