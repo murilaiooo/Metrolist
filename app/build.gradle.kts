@@ -8,6 +8,12 @@ if (localPropertiesFile.exists()) {
 }
 
 val baseApplicationId = "com.metrolist.music"
+val carVersionName = providers.gradleProperty("metrolistCarVersion").get()
+val carVersionParts = carVersionName.split(".").map(String::toInt)
+require(carVersionParts.size == 3 && carVersionParts.all { it in 0..999 }) {
+    "metrolistCarVersion must be numeric MAJOR.MINOR.PATCH with each component in 0..999"
+}
+val carVersionCode = carVersionParts[0] * 1_000_000 + carVersionParts[1] * 1_000 + carVersionParts[2]
 val applicationIdOverride = System.getenv("METROLIST_APPLICATION_ID")?.takeIf { it.isNotBlank() }
 val appNameOverride = System.getenv("METROLIST_APP_NAME")?.takeIf { it.isNotBlank() }
 val buildCommit =
@@ -62,6 +68,7 @@ android {
         buildConfigField("String", "LASTFM_SECRET", "\"$lastFmSecret\"")
         buildConfigField("String", "ARCHITECTURE", "\"universal\"")
         buildConfigField("Long", "DISCORD_APP_ID", "1447278780795064401L")
+        buildConfigField("Boolean", "IS_CAR", "false")
     }
 
     flavorDimensions += listOf("variant")
@@ -86,6 +93,19 @@ android {
             dimension = "variant"
             buildConfigField("Boolean", "CAST_AVAILABLE", "false")
             buildConfigField("Boolean", "UPDATER_AVAILABLE", "false")
+        }
+
+        // Car - dedicated Android head-unit product with its own version line.
+        create("car") {
+            dimension = "variant"
+            applicationId = "com.metrolist.music.car"
+            versionName = carVersionName
+            versionCode = carVersionCode
+            buildConfigField("String", "BASE_VERSION_NAME", "\"$carVersionName\"")
+            buildConfigField("Boolean", "CAST_AVAILABLE", "false")
+            buildConfigField("Boolean", "UPDATER_AVAILABLE", "false")
+            buildConfigField("Boolean", "IS_CAR", "true")
+            resValue("string", "app_name", "MetroList Car")
         }
     }
 
