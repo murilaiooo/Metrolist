@@ -1,5 +1,33 @@
 # MetroList Windows Release History
 
+## 0.3.0 — 2026-09-27
+
+Status: built and automated gates verified; awaiting user installation/manual smoke.
+
+Changes:
+- added the Car Library v1 export for direct folder-based playback on the MetroList Car APK;
+- preserves original/high-quality artwork sources when available;
+- exports incrementally, reusing unchanged media and artwork instead of rebuilding the whole library;
+- publishes library.json atomically after media/artwork are ready;
+- keeps the legacy .metrolistbackup export as a compatibility fallback;
+- added clear Car Library export progress and destination selection in the Windows UI.
+
+Compatibility:
+- MetroList Car 0.1.0 reads the exported folder directly from persistent head-unit storage;
+- audio does not need to be imported or duplicated into app-private storage;
+- legacy Windows backups remain supported separately.
+
+Verification:
+- desktop-core/export/app tests passed;
+- Windows distributable + MSI packaging passed;
+- package verifier: WINDOWS_PACKAGE_VERIFY_OK;
+- packaged executable reports APP_VERSION=0.3.0;
+- standard Android Foss/GMS/Izzy regression gate passed: BUILD SUCCESSFUL, 205 tasks.
+
+Artifact:
+desktop-app/build/compose/binaries/main/msi/MetroListWindows-0.3.0.msi
+SHA-256: 9b6201f2574ac14a13f7b8503520c9b8f0afd90546f273d83ab1fbdd5e5b4507
+
 ## 0.2.3 — 2026-09-27
 
 Status: approved by user after manual installed-login smoke.

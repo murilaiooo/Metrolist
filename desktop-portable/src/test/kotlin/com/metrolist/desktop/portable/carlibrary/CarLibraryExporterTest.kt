@@ -5,10 +5,12 @@ import com.metrolist.desktop.stream.ResolvedAudio
 import com.metrolist.innertube.models.Album
 import com.metrolist.innertube.models.Artist
 import com.metrolist.innertube.models.SongItem
+import java.awt.image.BufferedImage
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDateTime
+import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -32,9 +34,10 @@ class CarLibraryExporterTest {
         val media = source.resolve("song-one.webm")
         val mediaBytes = ByteArray(4096) { (it % 251).toByte() }
         Files.write(media, mediaBytes)
-        val artwork = source.resolve("cover.img")
-        val artworkBytes = ByteArray(2048) { ((it * 7) % 251).toByte() }
-        Files.write(artwork, artworkBytes)
+        val artwork = source.resolve("cover.png")
+        val image = BufferedImage(1400, 1400, BufferedImage.TYPE_INT_RGB)
+        ImageIO.write(image, "png", artwork.toFile())
+        val artworkBytes = Files.readAllBytes(artwork)
 
         val result =
             exporter(ids = ArrayDeque(listOf("library-test", "rev-1")))
@@ -64,6 +67,8 @@ class CarLibraryExporterTest {
             artworkBytes,
             Files.readAllBytes(destination.resolve(requireNotNull(manifest.songs.single().artworkPath))),
         )
+        assertEquals(1400, manifest.songs.single().artworkWidth)
+        assertEquals(1400, manifest.songs.single().artworkHeight)
         assertTrue(Files.isRegularFile(destination.resolve("library.json")))
         assertTrue(result.copiedFiles >= 2)
         assertEquals(0, result.reusedFiles)
@@ -133,7 +138,7 @@ class CarLibraryExporterTest {
 
         val failing =
             CarLibraryExporter(
-                producerVersion = "0.2.3",
+                producerVersion = "0.3.0",
                 newIdentity = ArrayDeque(listOf("rev-2"))::removeFirst,
                 beforeManifestPromotion = { throw IOException("injected failure") },
             )
@@ -155,7 +160,7 @@ class CarLibraryExporterTest {
 
     private fun exporter(ids: ArrayDeque<String>) =
         CarLibraryExporter(
-            producerVersion = "0.2.3",
+            producerVersion = "0.3.0",
             newIdentity = ids::removeFirst,
         )
 
