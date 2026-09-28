@@ -1,5 +1,7 @@
 package com.metrolist.music.car.importer
 
+import com.metrolist.music.car.feedback.CarOperationProgress
+import com.metrolist.music.car.feedback.CarOperationStage
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -29,7 +31,7 @@ class CarImportCoordinatorTest {
             assertFalse(harness.layers.downloadCompleted)
             assertFalse(harness.layers.roomComplete)
             assertEquals(1, harness.media.writeSpanCalls)
-            assertTrue(harness.journalStore.load() != null)
+            assertEquals(CarImportPhase.COMMITTING, harness.journalStore.load()!!.phase)
 
             harness.media.failOnPutDownload = false
             val resumed = harness.coordinator.runImport(harness.source, resume = true)
@@ -57,6 +59,7 @@ class CarImportCoordinatorTest {
             assertTrue(harness.layers.cacheComplete)
             assertTrue(harness.layers.downloadCompleted)
             assertFalse(harness.layers.roomComplete)
+            assertEquals(CarImportPhase.COMMITTING, harness.journalStore.load()!!.phase)
             assertEquals(1, harness.media.writeSpanCalls)
             assertEquals(1, harness.media.putDownloadCalls)
             harness.room.failNext = false
@@ -89,7 +92,7 @@ class CarImportCoordinatorTest {
                 availableDestinationBytes = 0L,
             )
         try {
-            val progress = mutableListOf<CarImportProgress>()
+            val progress = mutableListOf<CarOperationProgress>()
             val result =
                 harness.coordinator.runImport(
                     harness.source,
@@ -102,7 +105,9 @@ class CarImportCoordinatorTest {
             assertEquals(0, harness.media.putDownloadCalls)
             assertEquals(0, harness.room.upsertCalls)
             assertTrue(progress.isNotEmpty())
-            assertTrue("Unexpected progress: $progress", progress.all { it.totalBytes == 0L })
+            val importing = progress.filter { it.stage == CarOperationStage.IMPORTING }
+            assertTrue("Unexpected progress: $progress", importing.isNotEmpty())
+            assertTrue("Unexpected progress: $progress", importing.all { it.totalBytes == 0L })
             assertEquals(CarImportPhase.COMPLETE, harness.journalStore.load()!!.phase)
         } finally {
             harness.close()
@@ -208,6 +213,7 @@ class CarImportCoordinatorTest {
         private val bytes: ByteArray,
     ) : CarImportSource {
         var available = true
+        override val sizeBytes: Long = bytes.size.toLong()
 
         override fun open(): InputStream {
             if (!available) throw FileNotFoundException("Persisted URI is unavailable")

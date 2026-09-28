@@ -1,5 +1,8 @@
 package com.metrolist.music.car.importer
 
+import com.metrolist.music.car.feedback.CarOperationProgress
+import com.metrolist.music.car.feedback.CarOperationStage
+import com.metrolist.music.car.feedback.CarThroughputEstimator
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.security.MessageDigest
@@ -9,14 +12,6 @@ data class CarImportPreflight(
     val backup: ValidatedCarBackup,
     val archiveFingerprint: String,
     val requiredDestinationBytes: Long,
-)
-
-data class CarImportProgress(
-    val phase: CarImportPhase,
-    val completedSongs: Int,
-    val totalSongs: Int,
-    val bytesProcessed: Long,
-    val totalBytes: Long,
 )
 
 sealed interface CarImportResult {
@@ -43,6 +38,7 @@ class CarImportCoordinator(
     private val artworkTarget: CarArtworkImportPort,
     private val inspector: CarImportInspectorPort,
     private val availableDestinationBytes: () -> Long,
+    private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     fun validate(source: CarImportSource): CarImportPreflight =
         validateInternal(source, checkSpace = true)
@@ -50,11 +46,25 @@ class CarImportCoordinator(
     suspend fun runImport(
         source: CarImportSource,
         resume: Boolean,
-        onProgress: (CarImportProgress) -> Unit = {},
+        onProgress: (CarOperationProgress) -> Unit = {},
     ): CarImportResult {
+        val sourceSize = source.sizeBytes
+        onProgress(
+            CarOperationProgress(
+                stage = CarOperationStage.PREPARING,
+                bytesProcessed = 0L,
+                totalBytes = sourceSize,
+                detail = "Preparing backup",
+            ),
+        )
         val preflight =
             try {
-                validateInternal(source, checkSpace = !resume)
+                validateInternal(
+                    source = source,
+                    checkSpace = !resume,
+                    onProgress = onProgress,
+                    sourceSizeBytes = sourceSize,
+                )
             } catch (error: Exception) {
                 return CarImportResult.Failure(
                     CarImportPhase.VALIDATING,
@@ -95,6 +105,13 @@ class CarImportCoordinator(
 
             journal = journal.copy(phase = CarImportPhase.COMMITTING)
             journalStore.save(journal)
+            reportFinalizingProgress(
+                onProgress = onProgress,
+                journal = journal,
+                backup = preflight.backup,
+                totalBytes = preflight.requiredDestinationBytes,
+                detail = "Finalizing library",
+            )
             journal =
                 commitMetadata(
                     backup = preflight.backup,
@@ -104,16 +121,6 @@ class CarImportCoordinator(
                 )
             journal = journal.copy(phase = CarImportPhase.COMPLETE)
             journalStore.save(journal)
-            report(
-                onProgress,
-                CarImportProgress(
-                    phase = CarImportPhase.COMPLETE,
-                    completedSongs = journal.songs.values.count(CarSongImportRecord::completed),
-                    totalSongs = preflight.backup.songs.size,
-                    bytesProcessed = preflight.requiredDestinationBytes,
-                    totalBytes = preflight.requiredDestinationBytes,
-                ),
-            )
             CarImportResult.Success(
                 importedSongs = journal.songs.values.count(CarSongImportRecord::completed),
                 totalSongs = preflight.backup.songs.size,
@@ -202,14 +209,52 @@ class CarImportCoordinator(
     private fun validateInternal(
         source: CarImportSource,
         checkSpace: Boolean,
+        onProgress: ((CarOperationProgress) -> Unit)? = null,
+        sourceSizeBytes: Long? = source.sizeBytes,
     ): CarImportPreflight {
+        val totalBytes = sourceSizeBytes?.takeIf { it >= 0L }
+        val progress =
+            onProgress?.let {
+                CarProgressEmitter(
+                    nowMillis = nowMillis,
+                    onProgress = it,
+                )
+            }
+        progress?.emit(
+            stage = CarOperationStage.VALIDATING,
+            bytesProcessed = 0L,
+            totalBytes = totalBytes,
+            detail = "Opening backup archive",
+            force = true,
+        )
+
+        var countedBytes = 0L
         val backup =
             source.open().use { input ->
+                val countingInput =
+                    CountingProgressInputStream(input) { bytesRead ->
+                        countedBytes = bytesRead
+                        progress?.emit(
+                            stage = CarOperationStage.VALIDATING,
+                            bytesProcessed = bytesRead,
+                            totalBytes = totalBytes,
+                            detail = "Reading backup archive",
+                        )
+                    }
                 validator.validate(
-                    input = input,
+                    input = countingInput,
                     availableDestinationBytes = Long.MAX_VALUE,
                 )
             }
+
+        progress?.emit(
+            stage = CarOperationStage.VALIDATING,
+            bytesProcessed = totalBytes ?: countedBytes,
+            totalBytes = totalBytes,
+            detail = "Backup validation complete",
+            force = true,
+        )
+
         val required = remainingRequiredBytes(backup)
         if (checkSpace && availableDestinationBytes() < required) {
             throw CarPortableValidationException(
@@ -279,9 +324,23 @@ class CarImportCoordinator(
         backup: ValidatedCarBackup,
         journal: CarImportJournal,
         totalBytes: Long,
-        onProgress: (CarImportProgress) -> Unit,
+        onProgress: (CarOperationProgress) -> Unit,
     ): CarImportJournal {
         var current = initializeJournal(backup, journal)
+        val progress =
+            CarProgressEmitter(
+                nowMillis = nowMillis,
+                onProgress = onProgress,
+            )
+        progress.emit(
+            stage = CarOperationStage.IMPORTING,
+            completedItems = payloadReadyCount(current),
+            totalItems = backup.songs.size,
+            bytesProcessed = 0L,
+            totalBytes = totalBytes,
+            detail = "Importing media",
+            force = true,
+        )
         val spanOwners =
             backup.resources
                 .flatMap { resource -> resource.spans.map { it.relativePath to (resource to it) } }
@@ -343,18 +402,34 @@ class CarImportCoordinator(
                         }
                     }
                     zip.closeEntry()
-                    reportImportProgress(
-                        onProgress,
-                        current,
-                        backup,
-                        processedBytes,
-                        totalBytes,
+                    progress.emit(
+                        stage = CarOperationStage.IMPORTING,
+                        completedItems = payloadReadyCount(current),
+                        totalItems = backup.songs.size,
+                        bytesProcessed = processedBytes,
+                        totalBytes = totalBytes,
+                        detail = "Importing media",
                     )
                 }
             }
         }
+        progress.emit(
+            stage = CarOperationStage.IMPORTING,
+            completedItems = payloadReadyCount(current),
+            totalItems = backup.songs.size,
+            bytesProcessed = processedBytes.coerceAtMost(totalBytes),
+            totalBytes = totalBytes,
+            detail = "Media payload ready",
+            force = true,
+        )
         return current
     }
+
+    private fun payloadReadyCount(journal: CarImportJournal): Int =
+        journal.songs.values.count { record ->
+            record.cacheReady && record.artworkReady
+        }
+
     private fun initializeJournal(
         backup: ValidatedCarBackup,
         journal: CarImportJournal,
@@ -419,7 +494,7 @@ class CarImportCoordinator(
         backup: ValidatedCarBackup,
         journal: CarImportJournal,
         totalBytes: Long,
-        onProgress: (CarImportProgress) -> Unit,
+        onProgress: (CarOperationProgress) -> Unit,
     ): CarImportJournal {
         val transfers = backup.transfers.associateBy(CarPortableTransfer::requestId)
         val formats = backup.formats.associateBy(CarPortableFormat::id)
@@ -462,12 +537,12 @@ class CarImportCoordinator(
                     completed = true,
                 )
             }
-            reportImportProgress(
+            reportFinalizingProgress(
                 onProgress = onProgress,
                 journal = current,
                 backup = backup,
-                bytesProcessed = totalBytes,
                 totalBytes = totalBytes,
+                detail = "Finalizing library",
             )
         }
         return current
@@ -485,21 +560,21 @@ class CarImportCoordinator(
         return updated
     }
 
-    private fun reportImportProgress(
-        onProgress: (CarImportProgress) -> Unit,
+    private fun reportFinalizingProgress(
+        onProgress: (CarOperationProgress) -> Unit,
         journal: CarImportJournal,
         backup: ValidatedCarBackup,
-        bytesProcessed: Long,
         totalBytes: Long,
+        detail: String,
     ) {
-        report(
-            onProgress,
-            CarImportProgress(
-                phase = journal.phase,
-                completedSongs = journal.songs.values.count(CarSongImportRecord::completed),
-                totalSongs = backup.songs.size,
-                bytesProcessed = bytesProcessed.coerceAtMost(totalBytes),
+        onProgress(
+            CarOperationProgress(
+                stage = CarOperationStage.FINALIZING,
+                completedItems = journal.songs.values.count(CarSongImportRecord::completed),
+                totalItems = backup.songs.size,
+                bytesProcessed = totalBytes,
                 totalBytes = totalBytes,
+                detail = detail,
             ),
         )
     }
@@ -525,11 +600,77 @@ class CarImportCoordinator(
         object : FilterInputStream(input) {
             override fun close() = Unit
         }
+}
 
-    private fun report(
-        onProgress: (CarImportProgress) -> Unit,
-        progress: CarImportProgress,
+private class CountingProgressInputStream(
+    input: InputStream,
+    private val onBytesRead: (Long) -> Unit,
+) : FilterInputStream(input) {
+    var bytesRead: Long = 0L
+        private set
+
+    override fun read(): Int {
+        val value = super.read()
+        if (value >= 0) record(1L)
+        return value
+    }
+
+    override fun read(
+        buffer: ByteArray,
+        offset: Int,
+        length: Int,
+    ): Int {
+        val count = super.read(buffer, offset, length)
+        if (count > 0) record(count.toLong())
+        return count
+    }
+
+    private fun record(count: Long) {
+        bytesRead = Math.addExact(bytesRead, count)
+        onBytesRead(bytesRead)
+    }
+}
+
+private class CarProgressEmitter(
+    private val nowMillis: () -> Long,
+    private val onProgress: (CarOperationProgress) -> Unit,
+    private val minimumIntervalMillis: Long = 250L,
+) {
+    private val throughput = CarThroughputEstimator()
+    private var lastEmittedAt: Long? = null
+
+    fun emit(
+        stage: CarOperationStage,
+        bytesProcessed: Long,
+        totalBytes: Long?,
+        completedItems: Int? = null,
+        totalItems: Int? = null,
+        detail: String? = null,
+        force: Boolean = false,
     ) {
-        onProgress(progress)
+        val safeTotal = totalBytes?.takeIf { it >= 0L }
+        val safeBytes =
+            if (safeTotal != null) {
+                bytesProcessed.coerceIn(0L, safeTotal)
+            } else {
+                bytesProcessed.coerceAtLeast(0L)
+            }
+        val now = nowMillis()
+        val bytesPerSecond = throughput.sample(safeBytes, now)
+        val last = lastEmittedAt
+        if (!force && last != null && now - last < minimumIntervalMillis) return
+
+        lastEmittedAt = now
+        onProgress(
+            CarOperationProgress(
+                stage = stage,
+                completedItems = completedItems,
+                totalItems = totalItems,
+                bytesProcessed = safeBytes,
+                totalBytes = safeTotal,
+                bytesPerSecond = bytesPerSecond,
+                detail = detail,
+            ),
+        )
     }
 }

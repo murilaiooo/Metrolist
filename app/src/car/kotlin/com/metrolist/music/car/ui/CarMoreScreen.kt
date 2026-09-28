@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.BuildConfig
 import com.metrolist.music.R
 import com.metrolist.music.car.diagnostics.CarDiagnosticsSnapshot
+import com.metrolist.music.car.feedback.CarOperationState
 import com.metrolist.music.car.importer.CarImportRepository
 import com.metrolist.music.car.importer.CarImportStatus
 import com.metrolist.music.car.input.CarInputDiagnostics
@@ -37,6 +38,7 @@ import com.metrolist.music.car.library.CarLibrarySession
 import com.metrolist.music.car.library.CarSongSourceKind
 import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.car.service.CarImportService
+import com.metrolist.music.car.ui.component.CarOperationPanel
 import com.metrolist.music.constants.SongSortType
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.playback.DownloadUtil
@@ -90,6 +92,31 @@ fun CarMoreScreen(
                     },
                 )
             }
+        }
+
+    val importOperationState =
+        when (val state = importStatus) {
+            CarImportStatus.Idle -> CarOperationState.Idle
+            is CarImportStatus.Interrupted ->
+                CarOperationState.Error(
+                    message = "Import interrupted during ${state.phase.name.lowercase()}",
+                    actionHint = "Resume or discard the interrupted import.",
+                )
+            is CarImportStatus.Running -> CarOperationState.Running(state.progress)
+            is CarImportStatus.Complete ->
+                CarOperationState.Success(
+                    "Imported ${state.importedSongs}/${state.totalSongs} tracks",
+                )
+            is CarImportStatus.Failed ->
+                CarOperationState.Error(
+                    message = "Failed during ${state.phase.name.lowercase()}: ${state.message}",
+                    actionHint = "Try again or select a different backup.",
+                )
+            is CarImportStatus.Discarded ->
+                CarOperationState.Success(
+                    "Discarded incomplete import · ${state.preservedCompleted} preserved, " +
+                        "${state.cleanedIncomplete} cleaned",
+                )
         }
 
     val storage = context.filesDir
@@ -154,7 +181,7 @@ fun CarMoreScreen(
                     text = stringResource(R.string.car_import_status),
                     style = MaterialTheme.typography.titleLarge,
                 )
-                Text(importStatus.toDisplayText())
+                CarOperationPanel(importOperationState)
                 Row(
                     horizontalArrangement =
                         Arrangement.spacedBy(viewport.pxToDp(12f, density)),
@@ -219,8 +246,15 @@ private fun CarImportStatus.toDisplayText(): String =
     when (this) {
         CarImportStatus.Idle -> "Idle"
         is CarImportStatus.Interrupted -> "Interrupted during ${phase.name.lowercase()}"
-        is CarImportStatus.Running ->
-            "${progress.phase.name.lowercase()} · ${progress.completedSongs}/${progress.totalSongs} tracks"
+        is CarImportStatus.Running -> {
+            val items =
+                if (progress.completedItems != null && progress.totalItems != null) {
+                    " · ${progress.completedItems}/${progress.totalItems} items"
+                } else {
+                    ""
+                }
+            progress.stage.name.lowercase().replace('_', ' ') + items
+        }
         is CarImportStatus.Complete -> "Complete · $importedSongs/$totalSongs tracks"
         is CarImportStatus.Failed -> "Failed during ${phase.name.lowercase()}: $message"
         is CarImportStatus.Discarded ->

@@ -16,8 +16,8 @@ import com.metrolist.music.car.importer.CarArtworkStore
 import com.metrolist.music.car.importer.CarContentUriImportSource
 import com.metrolist.music.car.importer.CarImportCoordinator
 import com.metrolist.music.car.importer.CarImportInspector
+import com.metrolist.music.car.feedback.CarOperationProgress
 import com.metrolist.music.car.importer.CarImportPhase
-import com.metrolist.music.car.importer.CarImportProgress
 import com.metrolist.music.car.importer.CarImportRepository
 import com.metrolist.music.car.importer.CarImportResult
 import com.metrolist.music.car.importer.CarLegacyImportProvenanceStore
@@ -54,6 +54,26 @@ sealed interface CarImportServiceCommand {
             }
     }
 }
+
+
+internal fun carImportNotificationPercent(progress: CarOperationProgress): Int? =
+    progress.fraction
+        ?.let { fraction -> (fraction * 100f).toInt().coerceIn(0, 100) }
+
+internal fun carImportProgressText(progress: CarOperationProgress): String =
+    buildList {
+        add(
+            progress.stage.name
+                .lowercase()
+                .replace('_', ' ')
+                .replaceFirstChar(Char::uppercase),
+        )
+        progress.detail?.takeIf(String::isNotBlank)?.let(::add)
+        if (progress.completedItems != null && progress.totalItems != null) {
+            add("${progress.completedItems}/${progress.totalItems} items")
+        }
+        carImportNotificationPercent(progress)?.let { add("$it%") }
+    }.joinToString(" · ")
 
 @AndroidEntryPoint
 class CarImportService : Service() {
@@ -197,7 +217,7 @@ class CarImportService : Service() {
         }
     }
 
-    private fun updateNotification(progress: CarImportProgress) {
+    private fun updateNotification(progress: CarOperationProgress) {
         try {
             NotificationManagerCompat.from(this).notify(
                 NOTIFICATION_ID,
@@ -208,35 +228,23 @@ class CarImportService : Service() {
         }
     }
 
-    private fun buildNotification(progress: CarImportProgress?) =
+    private fun buildNotification(progress: CarOperationProgress?) =
         NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.download)
             .setContentTitle("Importing MetroList backup")
-            .setContentText(progressText(progress))
+            .setContentText(progress?.let(::carImportProgressText) ?: "Preparing import")
             .setOnlyAlertOnce(true)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .apply {
-                if (progress != null && progress.totalBytes > 0L) {
-                    val percent =
-                        ((progress.bytesProcessed * 100L) / progress.totalBytes)
-                            .coerceIn(0L, 100L)
-                            .toInt()
+                val percent = progress?.let(::carImportNotificationPercent)
+                if (percent != null) {
                     setProgress(100, percent, false)
                 } else {
                     setProgress(0, 0, true)
                 }
             }
             .build()
-
-    private fun progressText(progress: CarImportProgress?): String {
-        if (progress == null) return "Preparing import"
-        val phase =
-            progress.phase.name
-                .lowercase()
-                .replaceFirstChar { it.uppercase() }
-        return "$phase · ${progress.completedSongs}/${progress.totalSongs} songs"
-    }
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return

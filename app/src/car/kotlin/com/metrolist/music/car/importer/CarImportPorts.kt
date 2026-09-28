@@ -54,6 +54,8 @@ interface CarImportInspectorPort {
 
 interface CarImportSource {
     val identity: String
+    val sizeBytes: Long?
+        get() = null
 
     fun open(): InputStream
 }

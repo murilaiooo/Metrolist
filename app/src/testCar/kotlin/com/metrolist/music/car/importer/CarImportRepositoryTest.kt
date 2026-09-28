@@ -3,6 +3,8 @@ package com.metrolist.music.car.importer
 import android.content.Context
 import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
+import com.metrolist.music.car.feedback.CarOperationProgress
+import com.metrolist.music.car.feedback.CarOperationStage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -49,10 +51,10 @@ class CarImportRepositoryTest {
         val source = Uri.parse("content://backup/library")
         repository.rememberSource(source)
         val progress =
-            CarImportProgress(
-                phase = CarImportPhase.IMPORTING,
-                completedSongs = 2,
-                totalSongs = 10,
+            CarOperationProgress(
+                stage = CarOperationStage.IMPORTING,
+                completedItems = 2,
+                totalItems = 10,
                 bytesProcessed = 40,
                 totalBytes = 100,
             )

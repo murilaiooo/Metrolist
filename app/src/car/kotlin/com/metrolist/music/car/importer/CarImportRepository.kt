@@ -2,6 +2,7 @@ package com.metrolist.music.car.importer
 
 import android.content.Context
 import android.net.Uri
+import com.metrolist.music.car.feedback.CarOperationProgress
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -19,7 +20,7 @@ sealed interface CarImportStatus {
 
     data class Running(
         val sourceIdentity: String,
-        val progress: CarImportProgress,
+        val progress: CarOperationProgress,
     ) : CarImportStatus
     data class Complete(
         val sourceIdentity: String,
@@ -59,7 +60,7 @@ class CarImportRepository @Inject constructor(
 
     fun updateProgress(
         sourceIdentity: String,
-        progress: CarImportProgress,
+        progress: CarOperationProgress,
     ) {
         _status.value = CarImportStatus.Running(sourceIdentity, progress)
     }
