@@ -7,8 +7,22 @@ import org.junit.Test
 
 class CarNavigationTest {
     @Test
-    fun coldStartOpensDownloads() {
-        assertEquals(CarDestination.DOWNLOADS, carStartDestination(hasRestoredPlayback = false))
+    fun coldStartOpensMusic() {
+        assertEquals(CarDestination.MUSIC, carStartDestination(hasRestoredPlayback = false))
+    }
+
+    @Test
+    fun destinationsAreExactlyTheFiveCarSurfaces() {
+        assertEquals(
+            listOf(
+                CarDestination.NOW_PLAYING,
+                CarDestination.MUSIC,
+                CarDestination.LIBRARY,
+                CarDestination.SEARCH,
+                CarDestination.MORE,
+            ),
+            CarDestination.entries,
+        )
     }
 
     @Test
@@ -18,12 +32,12 @@ class CarNavigationTest {
 
     @Test
     fun backPopsOneCarRouteWithoutAnyPlaybackSideEffect() {
-        val state = CarNavigationState(CarDestination.DOWNLOADS)
+        val state = CarNavigationState(CarDestination.MUSIC)
         state.navigate(CarDestination.SEARCH)
 
         assertEquals(CarDestination.SEARCH, state.current)
         assertTrue(state.back())
-        assertEquals(CarDestination.DOWNLOADS, state.current)
+        assertEquals(CarDestination.MUSIC, state.current)
         assertFalse(state.back())
     }
 }

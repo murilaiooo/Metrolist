@@ -6,14 +6,14 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class CarDestination {
     NOW_PLAYING,
-    DOWNLOADS,
+    MUSIC,
     LIBRARY,
     SEARCH,
     MORE,
 }
 
 fun carStartDestination(hasRestoredPlayback: Boolean): CarDestination =
-    if (hasRestoredPlayback) CarDestination.NOW_PLAYING else CarDestination.DOWNLOADS
+    if (hasRestoredPlayback) CarDestination.NOW_PLAYING else CarDestination.MUSIC
 
 class CarNavigationState(
     startDestination: CarDestination,

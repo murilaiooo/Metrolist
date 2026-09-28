@@ -39,7 +39,8 @@ import com.metrolist.music.constants.SongSortType
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.playback.DownloadUtil
 import com.metrolist.music.playback.PlayerConnection
-import com.metrolist.music.ui.theme.MetrolistTheme
+import com.metrolist.music.car.ui.theme.CarDesignTokens
+import com.metrolist.music.car.ui.theme.CarTheme
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -92,7 +93,7 @@ fun CarApp(
             )
         }
 
-    MetrolistTheme {
+    CarTheme {
         Surface(
             modifier =
                 Modifier
@@ -127,7 +128,7 @@ private fun CarShell(
     carLibrarySession: CarLibrarySession,
     catalog: List<CarUnifiedSong>,
 ) {
-    val navigation = remember { CarNavigationState(CarDestination.DOWNLOADS) }
+    val navigation = remember { CarNavigationState(CarDestination.MUSIC) }
     val stack by navigation.stack.collectAsStateWithLifecycle()
     val destination = stack.last()
 
@@ -140,7 +141,7 @@ private fun CarShell(
 
     LaunchedEffect(connection) {
         val restored = connection?.mediaMetadata?.filterNotNull()?.first()
-        if (restored != null && navigation.current == CarDestination.DOWNLOADS) {
+        if (restored != null && navigation.current == CarDestination.MUSIC) {
             navigation.navigate(CarDestination.NOW_PLAYING)
         }
     }
@@ -165,7 +166,7 @@ private fun CarShell(
                             viewport = viewport,
                         )
 
-                    CarDestination.DOWNLOADS ->
+                    CarDestination.MUSIC ->
                         CarDownloadsScreen(
                             catalog = catalog,
                             carLibrarySession = carLibrarySession,
@@ -233,7 +234,7 @@ private fun CarNavigationRail(
 ) {
     val density = LocalDensity.current.density
     NavigationRail(
-        modifier = Modifier.width(viewport.pxToDp(154f, density)),
+        modifier = Modifier.width(viewport.pxToDp(CarDesignTokens.NavigationRailWidthPx, density)),
     ) {
         CAR_NAV_ITEMS.forEach { item ->
             NavigationRailItem(
@@ -246,7 +247,7 @@ private fun CarNavigationRail(
                     )
                 },
                 label = { Text(stringResource(item.labelRes)) },
-                modifier = Modifier.height(viewport.pxToDp(112f, density)),
+                modifier = Modifier.height(viewport.pxToDp(CarDesignTokens.StandardTrackRowHeightPx, density)),
             )
         }
     }
@@ -261,7 +262,7 @@ private data class CarNavItem(
 private val CAR_NAV_ITEMS =
     listOf(
         CarNavItem(CarDestination.NOW_PLAYING, R.drawable.music_note, R.string.now_playing),
-        CarNavItem(CarDestination.DOWNLOADS, R.drawable.download, R.string.car_music),
+        CarNavItem(CarDestination.MUSIC, R.drawable.download, R.string.car_music),
         CarNavItem(CarDestination.LIBRARY, R.drawable.library_music, R.string.car_library),
         CarNavItem(CarDestination.SEARCH, R.drawable.search, R.string.car_search),
         CarNavItem(CarDestination.MORE, R.drawable.more_horiz, R.string.car_more),
