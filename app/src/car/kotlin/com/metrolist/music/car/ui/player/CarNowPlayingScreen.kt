@@ -214,9 +214,14 @@ fun CarNowPlayingScreen(
                     ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(
+                FilledIconButton(
                     onClick = { connection?.seekToPrevious() },
                     enabled = metadata != null,
+                    colors =
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
                     modifier = Modifier.size(previousNextSize),
                 ) {
                     Icon(
@@ -238,9 +243,14 @@ fun CarNowPlayingScreen(
                     )
                 }
 
-                IconButton(
+                FilledIconButton(
                     onClick = { connection?.seekToNext() },
                     enabled = metadata != null,
+                    colors =
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                        ),
                     modifier = Modifier.size(previousNextSize),
                 ) {
                     Icon(
@@ -251,11 +261,15 @@ fun CarNowPlayingScreen(
                 }
             }
 
-            Spacer(Modifier.height(viewport.pxToDp(8f, density)))
+            Spacer(Modifier.height(viewport.pxToDp(16f, density)))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Start,
+                horizontalArrangement =
+                    Arrangement.spacedBy(
+                        viewport.pxToDp(6f, density),
+                        Alignment.CenterHorizontally,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val currentMetadata = metadata
@@ -323,20 +337,28 @@ fun CarNowPlayingScreen(
                     )
                 }
 
-                Spacer(Modifier.weight(1f))
-
-                Row(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(viewport.pxToDp(6f, density)),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    IconButton(
+                FilledIconButton(
                         onClick = {
                             runCatching {
                                 connection?.player?.shuffleModeEnabled = !shuffleEnabled
                             }
                         },
                         enabled = metadata != null,
+                        colors =
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor =
+                                    if (shuffleEnabled) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    },
+                                contentColor =
+                                    if (shuffleEnabled) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                            ),
                         modifier = Modifier.size(secondaryActionSize),
                     ) {
                         Icon(
@@ -345,9 +367,14 @@ fun CarNowPlayingScreen(
                         )
                     }
 
-                    IconButton(
+                    FilledIconButton(
                         onClick = { showQueue = true },
                         enabled = queue.isNotEmpty(),
+                        colors =
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
                         modifier = Modifier.size(secondaryActionSize),
                     ) {
                         Icon(
@@ -356,7 +383,7 @@ fun CarNowPlayingScreen(
                         )
                     }
 
-                    IconButton(
+                    FilledIconButton(
                         onClick = {
                             runCatching {
                                 val player = connection?.player ?: return@runCatching
@@ -369,6 +396,21 @@ fun CarNowPlayingScreen(
                             }
                         },
                         enabled = metadata != null,
+                        colors =
+                            IconButtonDefaults.filledIconButtonColors(
+                                containerColor =
+                                    if (repeatMode != Player.REPEAT_MODE_OFF) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.surfaceContainerHighest
+                                    },
+                                contentColor =
+                                    if (repeatMode != Player.REPEAT_MODE_OFF) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                            ),
                         modifier = Modifier.size(secondaryActionSize),
                     ) {
                         Icon(
@@ -383,9 +425,6 @@ fun CarNowPlayingScreen(
                             contentDescription = stringResource(R.string.car_repeat),
                         )
                     }
-                }
-
-                Spacer(Modifier.weight(1f))
 
                 FilledIconButton(
                     onClick = {
