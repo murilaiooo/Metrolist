@@ -30,6 +30,9 @@ sealed interface CarLibraryQueueResolution {
 
 class CarLibraryMediaResolver(
     private val repository: CarLibraryRepository,
+    private val artworkResolver: CarArtworkResolver = CarArtworkResolver(),
+    private val legacyArtworkLocator: (String) -> String? = { null },
+    private val remoteArtworkLocator: (CarLibrarySong) -> String? = { null },
 ) {
     fun resolve(songId: String): CarLibraryMediaResolution =
         when (val availability = repository.trackAvailability(songId)) {
@@ -43,7 +46,13 @@ class CarLibraryMediaResolver(
                 CarLibraryMediaResolution.Ready(
                     mediaItem =
                         availability.song
-                            .toMediaMetadata(availability.artworkLocator)
+                            .toMediaMetadata(
+                                artworkResolver.resolve(
+                                    carLibraryArtwork = availability.artworkLocator,
+                                    legacyArtwork = legacyArtworkLocator(availability.song.id),
+                                    remoteArtwork = remoteArtworkLocator(availability.song),
+                                ),
+                            )
                             .toMediaItem()
                             .buildUpon()
                             .setUri(availability.locator)
