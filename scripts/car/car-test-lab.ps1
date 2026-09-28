@@ -80,7 +80,8 @@ switch ($Action) {
             Start-Process -FilePath $Emulator -ArgumentList @(
                 "-avd", $AvdName,
                 "-no-snapshot",
-                "-gpu", "auto"
+                "-gpu", "auto",
+                "-memory", "2048"
             ) | Out-Null
         }
         Wait-ForBoot

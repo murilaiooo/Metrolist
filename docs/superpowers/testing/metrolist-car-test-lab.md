@@ -85,7 +85,7 @@ Allowed viewport presets are exactly:
 - `1024x600`;
 - `1280x720`.
 
-The script targets only `MetroList_Car_API29`. It has no delete, wipe, format, or AVD-recreation action.
+The script targets only `MetroList_Car_API29`. Its `start` action passes `-memory 2048` so the primary acceptance run is enforced at 2 GB even if the emulator rewrites AVD defaults. Guest `MemTotal` is the authority for the active profile. The script has no delete, wipe, format, or AVD-recreation action.
 
 ## Baseline test gate
 
