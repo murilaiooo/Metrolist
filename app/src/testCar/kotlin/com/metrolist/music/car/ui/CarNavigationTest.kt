@@ -12,7 +12,7 @@ class CarNavigationTest {
     }
 
     @Test
-    fun destinationsAreExactlyTheFiveCarSurfaces() {
+    fun primaryRailDestinationsRemainExactlyFive() {
         assertEquals(
             listOf(
                 CarDestination.NOW_PLAYING,
@@ -21,8 +21,18 @@ class CarNavigationTest {
                 CarDestination.SEARCH,
                 CarDestination.MORE,
             ),
-            CarDestination.entries,
+            CAR_PRIMARY_DESTINATIONS,
         )
+    }
+
+    @Test
+    fun dislikedIsSecondaryAndBackReturnsToMore() {
+        val state = CarNavigationState(CarDestination.MORE)
+        state.navigate(CarDestination.DISLIKED)
+
+        assertEquals(CarDestination.DISLIKED, state.current)
+        assertTrue(state.back())
+        assertEquals(CarDestination.MORE, state.current)
     }
 
     @Test

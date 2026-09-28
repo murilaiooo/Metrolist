@@ -52,6 +52,8 @@ fun CarMoreScreen(
     carLibrarySession: CarLibrarySession,
     catalog: List<CarUnifiedSong>,
     viewport: CarViewportMetrics,
+    dislikedCount: Int,
+    onOpenDisliked: () -> Unit,
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current.density
@@ -167,6 +169,20 @@ fun CarMoreScreen(
             text = stringResource(R.string.car_more),
             style = MaterialTheme.typography.headlineLarge,
         )
+
+        Button(
+            onClick = onOpenDisliked,
+            modifier =
+                Modifier.sizeIn(
+                    minHeight = viewport.pxToDp(60f, density),
+                ),
+        ) {
+            Text(
+                text =
+                    stringResource(R.string.car_disliked_review) +
+                        if (dislikedCount > 0) " ($dislikedCount)" else "",
+            )
+        }
 
         Surface(
             modifier = Modifier.fillMaxWidth(),

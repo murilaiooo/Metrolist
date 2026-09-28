@@ -54,6 +54,82 @@ class CarUnifiedCatalogTest {
     }
 
     @Test
+    fun activeDislikesAreExcludedFromNormalCatalog() {
+        val disliked =
+            Song(
+                song =
+                    SongEntity(
+                        id = "disliked-id",
+                        title = "Do not play",
+                        isDownloaded = true,
+                    ),
+                artists = emptyList(),
+            )
+        val allowed =
+            Song(
+                song =
+                    SongEntity(
+                        id = "allowed-id",
+                        title = "Keep playing",
+                        isDownloaded = true,
+                    ),
+                artists = emptyList(),
+            )
+
+        val catalog =
+            CarUnifiedCatalog.merge(
+                index = null,
+                downloadedSongs = listOf(disliked, allowed),
+                legacySongIds = emptySet(),
+                dislikedSongIds = setOf("disliked-id"),
+            )
+
+        assertEquals(listOf("allowed-id"), catalog.map(CarUnifiedSong::id))
+    }
+
+    @Test
+    fun dislikeFilterCanBeBypassedOnlyForReviewPlaylist() {
+        val songs =
+            listOf(
+                CarUnifiedSong(
+                    id = "disliked-id",
+                    title = "Do not play",
+                    artists = emptyList(),
+                    album = null,
+                    explicit = false,
+                    primarySource = CarSongSourceKind.CAR_LOCAL_DOWNLOAD,
+                    sourceKinds = setOf(CarSongSourceKind.CAR_LOCAL_DOWNLOAD),
+                ),
+                CarUnifiedSong(
+                    id = "allowed-id",
+                    title = "Keep playing",
+                    artists = emptyList(),
+                    album = null,
+                    explicit = false,
+                    primarySource = CarSongSourceKind.CAR_LOCAL_DOWNLOAD,
+                    sourceKinds = setOf(CarSongSourceKind.CAR_LOCAL_DOWNLOAD),
+                ),
+            )
+
+        assertEquals(
+            listOf("allowed-id"),
+            filterActiveDislikes(
+                songs = songs,
+                dislikedSongIds = setOf("disliked-id"),
+                allowDisliked = false,
+            ).map(CarUnifiedSong::id),
+        )
+        assertEquals(
+            listOf("disliked-id", "allowed-id"),
+            filterActiveDislikes(
+                songs = songs,
+                dislikedSongIds = setOf("disliked-id"),
+                allowDisliked = true,
+            ).map(CarUnifiedSong::id),
+        )
+    }
+
+    @Test
     fun keepsDeviceOnlyDownloadWhenCarLibraryDoesNotContainIt() {
         val downloaded =
             Song(

@@ -10,7 +10,17 @@ enum class CarDestination {
     LIBRARY,
     SEARCH,
     MORE,
+    DISLIKED,
 }
+
+val CAR_PRIMARY_DESTINATIONS =
+    listOf(
+        CarDestination.NOW_PLAYING,
+        CarDestination.MUSIC,
+        CarDestination.LIBRARY,
+        CarDestination.SEARCH,
+        CarDestination.MORE,
+    )
 
 fun carStartDestination(hasRestoredPlayback: Boolean): CarDestination =
     if (hasRestoredPlayback) CarDestination.NOW_PLAYING else CarDestination.MUSIC

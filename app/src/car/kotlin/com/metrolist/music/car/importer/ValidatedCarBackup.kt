@@ -15,3 +15,17 @@ data class ValidatedCarBackup(
 class CarPortableValidationException(
     val errors: List<String>,
 ) : IllegalArgumentException(errors.joinToString("; "))
+
+
+internal fun ValidatedCarBackup.withoutSongs(excludedSongIds: Set<String>): ValidatedCarBackup {
+    if (excludedSongIds.isEmpty()) return this
+    val includedIds = songs.map(CarPortableSong::id).filterNot(excludedSongIds::contains).toSet()
+    return copy(
+        songs = songs.filter { it.id in includedIds },
+        artistMaps = artistMaps.filter { it.songId in includedIds },
+        albumMaps = albumMaps.filter { it.songId in includedIds },
+        formats = formats.filter { it.id in includedIds },
+        transfers = transfers.filter { it.requestId in includedIds },
+        resources = resources.filter { it.songId in includedIds },
+    )
+}

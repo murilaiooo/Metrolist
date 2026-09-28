@@ -29,6 +29,7 @@ object CarUnifiedCatalog {
         index: CarLibraryIndex?,
         downloadedSongs: List<Song>,
         legacySongIds: Set<String>,
+        dislikedSongIds: Set<String> = emptySet(),
     ): List<CarUnifiedSong> {
         val downloadsById = downloadedSongs.associateBy(Song::id).toMutableMap()
         val result = mutableListOf<CarUnifiedSong>()
@@ -79,7 +80,11 @@ object CarUnifiedCatalog {
                 )
         }
 
-        return result
+        return filterActiveDislikes(
+            songs = result,
+            dislikedSongIds = dislikedSongIds,
+            allowDisliked = false,
+        )
     }
 
     fun search(
@@ -96,6 +101,17 @@ object CarUnifiedCatalog {
     }
 }
 
+fun filterActiveDislikes(
+    songs: List<CarUnifiedSong>,
+    dislikedSongIds: Set<String>,
+    allowDisliked: Boolean,
+): List<CarUnifiedSong> =
+    if (allowDisliked || dislikedSongIds.isEmpty()) {
+        songs
+    } else {
+        songs.filterNot { it.id in dislikedSongIds }
+    }
+
 sealed interface CarUnifiedQueueResolution {
     data class Ready(
         val queue: ListQueue,
@@ -110,19 +126,36 @@ sealed interface CarUnifiedQueueResolution {
 class CarUnifiedPlaybackResolver(
     private val carLibraryResolver: CarLibraryMediaResolver,
     private val legacyArtworkStore: CarArtworkStore,
+    private val activeDislikedSongIds: () -> Set<String> = { emptySet() },
 ) {
     fun resolveQueue(
         songs: List<CarUnifiedSong>,
         startIndex: Int = 0,
         title: String? = null,
+        allowDisliked: Boolean = false,
     ): CarUnifiedQueueResolution {
         if (songs.isEmpty()) return CarUnifiedQueueResolution.Unavailable("")
         val safeStartIndex = startIndex.coerceIn(songs.indices)
         val startId = songs[safeStartIndex].id
+        val dislikedIds = activeDislikedSongIds()
+        if (!allowDisliked && startId in dislikedIds) {
+            return CarUnifiedQueueResolution.Unavailable(startId)
+        }
+        val visibleSongs =
+            filterActiveDislikes(
+                songs = songs,
+                dislikedSongIds = dislikedIds,
+                allowDisliked = allowDisliked,
+            )
         val resolved = mutableListOf<androidx.media3.common.MediaItem>()
-        val skipped = mutableListOf<String>()
+        val skipped =
+            if (allowDisliked) {
+                mutableListOf()
+            } else {
+                songs.filter { it.id in dislikedIds }.mapTo(mutableListOf(), CarUnifiedSong::id)
+            }
 
-        songs.forEach { song ->
+        visibleSongs.forEach { song ->
             val mediaItem = resolve(song)
             if (mediaItem == null) {
                 if (song.id == startId) return CarUnifiedQueueResolution.Unavailable(song.id)

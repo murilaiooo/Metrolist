@@ -25,6 +25,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -42,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -58,10 +60,16 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import coil3.compose.AsyncImage
 import com.metrolist.music.R
+import com.metrolist.music.car.library.CarUnifiedSong
+import com.metrolist.music.car.preferences.CarDislikeRepository
+import com.metrolist.music.car.preferences.CarDislikeSnapshot
+import com.metrolist.music.car.preferences.performCarDislike
 import com.metrolist.music.car.ui.CarViewportMetrics
 import com.metrolist.music.playback.PlayerConnection
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -69,6 +77,8 @@ import kotlin.math.roundToInt
 fun CarNowPlayingScreen(
     connection: PlayerConnection?,
     viewport: CarViewportMetrics,
+    dislikeRepository: CarDislikeRepository,
+    rawCatalog: List<CarUnifiedSong>,
 ) {
     val density = LocalDensity.current.density
     val layoutDirection = LocalLayoutDirection.current
@@ -91,6 +101,7 @@ fun CarNowPlayingScreen(
     val queue by
         connection?.queueWindows?.collectAsStateWithLifecycle()
             ?: remember { mutableStateOf(emptyList()) }
+    val dislikedSongIds by dislikeRepository.activeSongIds.collectAsStateWithLifecycle()
 
     var positionMs by remember(metadata?.id) { mutableLongStateOf(0L) }
     var seeking by remember { mutableStateOf(false) }
@@ -244,64 +255,171 @@ fun CarNowPlayingScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement =
-                    Arrangement.spacedBy(
-                        viewport.pxToDp(18f, density),
-                        Alignment.CenterHorizontally,
-                    ),
+                horizontalArrangement = Arrangement.Start,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(
-                    onClick = {
-                        runCatching {
-                            connection?.player?.shuffleModeEnabled = !shuffleEnabled
-                        }
-                    },
-                    enabled = metadata != null,
-                    modifier = Modifier.size(secondaryActionSize),
-                ) {
-                    Icon(
-                        painter = painterResource(if (shuffleEnabled) R.drawable.shuffle_on else R.drawable.shuffle),
-                        contentDescription = stringResource(R.string.car_shuffle),
-                    )
-                }
+                val currentMetadata = metadata
+                val currentDisliked = currentMetadata?.id in dislikedSongIds
+                val likeGreen = Color(0xFF45B96D)
+                val dislikeRed = Color(0xFFE05252)
 
-                IconButton(
-                    onClick = { showQueue = true },
-                    enabled = queue.isNotEmpty(),
-                    modifier = Modifier.size(secondaryActionSize),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.queue_music),
-                        contentDescription = stringResource(R.string.car_open_queue),
-                    )
-                }
-
-                IconButton(
+                FilledIconButton(
                     onClick = {
-                        runCatching {
-                            val player = connection?.player ?: return@runCatching
-                            player.repeatMode =
-                                when (player.repeatMode) {
-                                    Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                                    Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                                    else -> Player.REPEAT_MODE_OFF
-                                }
-                        }
-                    },
-                    enabled = metadata != null,
-                    modifier = Modifier.size(secondaryActionSize),
-                ) {
-                    Icon(
-                        painter =
-                            painterResource(
-                                when (repeatMode) {
-                                    Player.REPEAT_MODE_ONE -> R.drawable.repeat_one_on
-                                    Player.REPEAT_MODE_ALL -> R.drawable.repeat_on
-                                    else -> R.drawable.repeat
+                        val song = currentMetadata ?: return@FilledIconButton
+                        if (song.id in dislikedSongIds) return@FilledIconButton
+                        val source = rawCatalog.firstOrNull { it.id == song.id }
+                        val snapshot =
+                            CarDislikeSnapshot(
+                                songId = song.id,
+                                title = song.title,
+                                artists = song.artists.map { it.name },
+                                album = source?.album ?: song.album?.title,
+                                sourceKinds = source?.sourceKinds?.map { it.name }?.toSet().orEmpty(),
+                            )
+                        gestureScope.launch {
+                            performCarDislike(
+                                persist = {
+                                    withContext(Dispatchers.IO) {
+                                        dislikeRepository.dislike(snapshot)
+                                    }
                                 },
-                            ),
-                        contentDescription = stringResource(R.string.car_repeat),
+                                mutatePlayback = {
+                                    connection?.player?.let { player ->
+                                        val currentIndex = player.currentMediaItemIndex
+                                        if (currentIndex !in 0 until player.mediaItemCount) return@let
+                                        if (player.mediaItemCount <= 1) {
+                                            player.clearMediaItems()
+                                        } else {
+                                            player.removeMediaItem(currentIndex)
+                                            if (
+                                                player.playbackState == Player.STATE_IDLE ||
+                                                    player.playbackState == Player.STATE_ENDED
+                                            ) {
+                                                player.prepare()
+                                            }
+                                            player.playWhenReady = true
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                    },
+                    enabled = currentMetadata != null,
+                    colors =
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor =
+                                if (currentDisliked) {
+                                    dislikeRed
+                                } else {
+                                    dislikeRed.copy(alpha = 0.16f)
+                                },
+                            contentColor = if (currentDisliked) Color.White else dislikeRed,
+                        ),
+                    modifier = Modifier.size(secondaryActionSize),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.thumb_down),
+                        contentDescription = stringResource(R.string.car_dislike),
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                Row(
+                    horizontalArrangement =
+                        Arrangement.spacedBy(viewport.pxToDp(6f, density)),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = {
+                            runCatching {
+                                connection?.player?.shuffleModeEnabled = !shuffleEnabled
+                            }
+                        },
+                        enabled = metadata != null,
+                        modifier = Modifier.size(secondaryActionSize),
+                    ) {
+                        Icon(
+                            painter = painterResource(if (shuffleEnabled) R.drawable.shuffle_on else R.drawable.shuffle),
+                            contentDescription = stringResource(R.string.car_shuffle),
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { showQueue = true },
+                        enabled = queue.isNotEmpty(),
+                        modifier = Modifier.size(secondaryActionSize),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.queue_music),
+                            contentDescription = stringResource(R.string.car_open_queue),
+                        )
+                    }
+
+                    IconButton(
+                        onClick = {
+                            runCatching {
+                                val player = connection?.player ?: return@runCatching
+                                player.repeatMode =
+                                    when (player.repeatMode) {
+                                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                                        else -> Player.REPEAT_MODE_OFF
+                                    }
+                            }
+                        },
+                        enabled = metadata != null,
+                        modifier = Modifier.size(secondaryActionSize),
+                    ) {
+                        Icon(
+                            painter =
+                                painterResource(
+                                    when (repeatMode) {
+                                        Player.REPEAT_MODE_ONE -> R.drawable.repeat_one_on
+                                        Player.REPEAT_MODE_ALL -> R.drawable.repeat_on
+                                        else -> R.drawable.repeat
+                                    },
+                                ),
+                            contentDescription = stringResource(R.string.car_repeat),
+                        )
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                FilledIconButton(
+                    onClick = {
+                        val song = currentMetadata ?: return@FilledIconButton
+                        if (song.id in dislikedSongIds) {
+                            gestureScope.launch {
+                                withContext(Dispatchers.IO) {
+                                    dislikeRepository.undo(song.id)
+                                }
+                                if (!song.liked) {
+                                    connection?.toggleLike()
+                                }
+                            }
+                        } else {
+                            connection?.toggleLike()
+                        }
+                    },
+                    enabled = currentMetadata != null,
+                    colors =
+                        IconButtonDefaults.filledIconButtonColors(
+                            containerColor =
+                                if (currentMetadata?.liked == true) {
+                                    likeGreen
+                                } else {
+                                    likeGreen.copy(alpha = 0.16f)
+                                },
+                            contentColor =
+                                if (currentMetadata?.liked == true) Color.White else likeGreen,
+                        ),
+                    modifier = Modifier.size(secondaryActionSize),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.thumb_up),
+                        contentDescription = stringResource(R.string.car_like),
                     )
                 }
             }

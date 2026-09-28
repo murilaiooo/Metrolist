@@ -24,6 +24,7 @@ import com.metrolist.music.car.importer.CarLegacyImportProvenanceStore
 import com.metrolist.music.car.importer.CarMedia3ImportTarget
 import com.metrolist.music.car.importer.CarPortableArchiveValidator
 import com.metrolist.music.car.importer.CarRoomImportTarget
+import com.metrolist.music.car.preferences.CarDislikeLedgerStore
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.playback.DownloadUtil
 import dagger.hilt.android.AndroidEntryPoint
@@ -201,6 +202,12 @@ class CarImportService : Service() {
                     artworkStore = artworkStore,
                 ),
             availableDestinationBytes = { filesDir.usableSpace },
+            excludedSongIds = {
+                CarDislikeLedgerStore(filesDir)
+                    .load()
+                    .records
+                    .mapTo(linkedSetOf()) { it.songId }
+            },
         )
     }
 

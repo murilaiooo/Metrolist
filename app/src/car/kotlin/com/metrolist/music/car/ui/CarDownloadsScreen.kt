@@ -50,6 +50,7 @@ fun CarDownloadsScreen(
     carLibrarySession: CarLibrarySession,
     connection: PlayerConnection?,
     viewport: CarViewportMetrics,
+    dislikedSongIds: Set<String>,
     onOpenNowPlaying: () -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
@@ -60,10 +61,11 @@ fun CarDownloadsScreen(
             ?: remember { mutableStateOf(null) }
     val artworkStore = remember(context) { CarArtworkStore(context.filesDir) }
     val resolver =
-        remember(carLibrarySession, artworkStore) {
+        remember(carLibrarySession, artworkStore, dislikedSongIds) {
             CarUnifiedPlaybackResolver(
                 carLibraryResolver = carLibrarySession.mediaResolver,
                 legacyArtworkStore = artworkStore,
+                activeDislikedSongIds = { dislikedSongIds },
             )
         }
     var queueOperation by remember { mutableStateOf<CarQueueOperation?>(null) }

@@ -75,6 +75,7 @@ fun CarLibraryScreen(
     carLibrarySession: CarLibrarySession,
     viewport: CarViewportMetrics,
     connection: PlayerConnection?,
+    dislikedSongIds: Set<String>,
     onOpenNowPlaying: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -380,7 +381,9 @@ fun CarLibraryScreen(
                 CarOperationPanel(current.operation)
             }
 
-            val allSongIds = active.index.songs.map { it.id }
+            val visibleSongs =
+                active.index.songs.filterNot { it.id in dislikedSongIds }
+            val allSongIds = visibleSongs.map { it.id }
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement =
@@ -397,16 +400,20 @@ fun CarLibraryScreen(
                         items = active.index.playlists,
                         key = { playlist -> "playlist:" + playlist.id },
                     ) { playlist ->
+                        val visibleSongIds =
+                            playlist.songIds.filterNot { it in dislikedSongIds }
                         Surface(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
                                     .clickable(enabled = connection != null) {
-                                        playLocalQueue(
-                                            songIds = playlist.songIds,
-                                            startIndex = 0,
-                                            title = playlist.name,
-                                        )
+                                        if (visibleSongIds.isNotEmpty()) {
+                                            playLocalQueue(
+                                                songIds = visibleSongIds,
+                                                startIndex = 0,
+                                                title = playlist.name,
+                                            )
+                                        }
                                     },
                             shape = MaterialTheme.shapes.large,
                             tonalElevation = viewport.pxToDp(1f, density),
@@ -425,7 +432,7 @@ fun CarLibraryScreen(
                                     text =
                                         stringResource(
                                             R.string.car_library_track_count,
-                                            playlist.songIds.size,
+                                            visibleSongIds.size,
                                         ),
                                     color =
                                         MaterialTheme.colorScheme.onSurfaceVariant,
@@ -447,7 +454,7 @@ fun CarLibraryScreen(
                 }
 
                 itemsIndexed(
-                    items = active.index.songs,
+                    items = visibleSongs,
                     key = { _, song -> "song:" + song.id },
                 ) { index, song ->
                     val isCurrent = currentMetadata?.id == song.id

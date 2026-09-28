@@ -38,6 +38,7 @@ class CarImportCoordinator(
     private val artworkTarget: CarArtworkImportPort,
     private val inspector: CarImportInspectorPort,
     private val availableDestinationBytes: () -> Long,
+    private val excludedSongIds: () -> Set<String> = { emptySet() },
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
     fun validate(source: CarImportSource): CarImportPreflight =
@@ -229,7 +230,7 @@ class CarImportCoordinator(
         )
 
         var countedBytes = 0L
-        val backup =
+        val validatedBackup =
             source.open().use { input ->
                 val countingInput =
                     CountingProgressInputStream(input) { bytesRead ->
@@ -246,6 +247,7 @@ class CarImportCoordinator(
                     availableDestinationBytes = Long.MAX_VALUE,
                 )
             }
+        val backup = validatedBackup.withoutSongs(excludedSongIds())
 
         progress?.emit(
             stage = CarOperationStage.VALIDATING,
@@ -263,7 +265,7 @@ class CarImportCoordinator(
         }
         return CarImportPreflight(
             backup = backup,
-            archiveFingerprint = fingerprint(backup.manifest),
+            archiveFingerprint = fingerprint(validatedBackup.manifest),
             requiredDestinationBytes = required,
         )
     }
@@ -434,9 +436,17 @@ class CarImportCoordinator(
         backup: ValidatedCarBackup,
         journal: CarImportJournal,
     ): CarImportJournal {
-        if (journal.songs.size == backup.songs.size) return journal
+        val allowedSongIds = backup.songs.mapTo(linkedSetOf(), CarPortableSong::id)
+        var current =
+            if (journal.songs.keys.all { it in allowedSongIds }) {
+                journal
+            } else {
+                journal.copy(
+                    songs = journal.songs.filterKeys { it in allowedSongIds },
+                ).also(journalStore::save)
+            }
+        if (current.songs.size == backup.songs.size) return current
         val resources = backup.resources.associateBy(CarPortableResource::songId)
-        var current = journal
         backup.songs.forEach { song ->
             if (song.id in current.songs) return@forEach
             val resource = resources.getValue(song.id)

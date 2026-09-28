@@ -34,6 +34,8 @@ import com.metrolist.music.car.library.CarLibrarySession
 import com.metrolist.music.car.library.CarLibraryStartupCoordinator
 import com.metrolist.music.car.library.CarUnifiedCatalog
 import com.metrolist.music.car.library.CarUnifiedSong
+import com.metrolist.music.car.preferences.CarDislikeLedgerStore
+import com.metrolist.music.car.preferences.CarDislikeRepository
 import com.metrolist.music.car.ui.player.CarMiniPlayer
 import com.metrolist.music.car.ui.player.CarNowPlayingScreen
 import com.metrolist.music.constants.SongSortType
@@ -73,6 +75,10 @@ fun CarApp(
         remember(context) {
             CarLegacyImportProvenanceStore(context)
         }
+    val dislikeRepository =
+        remember(context) {
+            CarDislikeRepository(CarDislikeLedgerStore(context.filesDir))
+        }
     val downloadedSongs by
         database
             .downloadedSongs(
@@ -81,6 +87,7 @@ fun CarApp(
             ).collectAsStateWithLifecycle(initialValue = emptyList())
     val carLibraryIndex by carLibrarySession.index.collectAsStateWithLifecycle()
     val importStatus by importRepository.status.collectAsStateWithLifecycle()
+    val dislikedSongIds by dislikeRepository.activeSongIds.collectAsStateWithLifecycle()
     var legacySongIds by remember { mutableStateOf(provenanceStore.importedSongIds()) }
 
     LaunchedEffect(carLibraryStartup) {
@@ -93,12 +100,20 @@ fun CarApp(
         legacySongIds = provenanceStore.importedSongIds()
     }
 
-    val catalog =
+    val rawCatalog =
         remember(carLibraryIndex, downloadedSongs, legacySongIds) {
             CarUnifiedCatalog.merge(
                 index = carLibraryIndex,
                 downloadedSongs = downloadedSongs,
                 legacySongIds = legacySongIds,
+            )
+        }
+    val catalog =
+        remember(rawCatalog, dislikedSongIds) {
+            com.metrolist.music.car.library.filterActiveDislikes(
+                songs = rawCatalog,
+                dislikedSongIds = dislikedSongIds,
+                allowDisliked = false,
             )
         }
 
@@ -121,6 +136,9 @@ fun CarApp(
                 inputDiagnostics = inputDiagnostics,
                 carLibrarySession = carLibrarySession,
                 catalog = catalog,
+                rawCatalog = rawCatalog,
+                dislikedSongIds = dislikedSongIds,
+                dislikeRepository = dislikeRepository,
             )
         }
     }
@@ -136,6 +154,9 @@ private fun CarShell(
     inputDiagnostics: CarInputDiagnostics,
     carLibrarySession: CarLibrarySession,
     catalog: List<CarUnifiedSong>,
+    rawCatalog: List<CarUnifiedSong>,
+    dislikedSongIds: Set<String>,
+    dislikeRepository: CarDislikeRepository,
 ) {
     val navigation = remember { CarNavigationState(CarDestination.MUSIC) }
     val stack by navigation.stack.collectAsStateWithLifecycle()
@@ -173,6 +194,8 @@ private fun CarShell(
                         CarNowPlayingScreen(
                             connection = connection,
                             viewport = viewport,
+                            dislikeRepository = dislikeRepository,
+                            rawCatalog = rawCatalog,
                         )
 
                     CarDestination.MUSIC ->
@@ -181,6 +204,7 @@ private fun CarShell(
                             carLibrarySession = carLibrarySession,
                             connection = connection,
                             viewport = viewport,
+                            dislikedSongIds = dislikedSongIds,
                             onOpenNowPlaying = {
                                 navigation.navigate(CarDestination.NOW_PLAYING)
                             },
@@ -191,6 +215,7 @@ private fun CarShell(
                             carLibrarySession = carLibrarySession,
                             viewport = viewport,
                             connection = connection,
+                            dislikedSongIds = dislikedSongIds,
                             onOpenNowPlaying = {
                                 navigation.navigate(CarDestination.NOW_PLAYING)
                             },
@@ -202,6 +227,7 @@ private fun CarShell(
                             carLibrarySession = carLibrarySession,
                             connection = connection,
                             viewport = viewport,
+                            dislikedSongIds = dislikedSongIds,
                             onOpenNowPlaying = {
                                 navigation.navigate(CarDestination.NOW_PLAYING)
                             },
@@ -216,6 +242,23 @@ private fun CarShell(
                             carLibrarySession = carLibrarySession,
                             catalog = catalog,
                             viewport = viewport,
+                            dislikedCount = dislikeRepository.records.collectAsStateWithLifecycle().value.size,
+                            onOpenDisliked = {
+                                navigation.navigate(CarDestination.DISLIKED)
+                            },
+                        )
+
+                    CarDestination.DISLIKED ->
+                        CarDislikedScreen(
+                            repository = dislikeRepository,
+                            rawCatalog = rawCatalog,
+                            carLibrarySession = carLibrarySession,
+                            downloadUtil = downloadUtil,
+                            connection = connection,
+                            viewport = viewport,
+                            onOpenNowPlaying = {
+                                navigation.navigate(CarDestination.NOW_PLAYING)
+                            },
                         )
                 }
             }

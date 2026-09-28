@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="car_like">Like</string>
+    <string name="car_dislike">Dislike</string>
+    <string name="car_disliked">Disliked</string>
+    <string name="car_disliked_desc">Review songs you marked as disliked before deleting their local files.</string>
+    <string name="car_disliked_empty">No disliked songs yet.</string>
+    <string name="car_disliked_review">Review disliked songs</string>
+    <string name="car_disliked_pending">Pending deletion</string>
+    <string name="car_disliked_deleted">Deleted</string>
+    <string name="car_disliked_undo">Undo dislike</string>
+    <string name="car_disliked_export">Export</string>
+    <string name="car_disliked_delete_all">Delete all disliked files</string>
+    <string name="car_disliked_delete_title">Delete disliked files?</string>
+    <string name="car_disliked_delete_confirm">Delete files</string>
+    <string name="car_disliked_delete_cancel">Cancel</string>
+    <string name="car_disliked_delete_message">This will delete %1$d local audio file(s). Your dislike history will stay saved. Deleted files cannot be restored automatically.</string>
+</resources>
