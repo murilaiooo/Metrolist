@@ -20,7 +20,7 @@ data class CarViewportMetrics(
     companion object {
         private const val REFERENCE_WIDTH_PX = 1280f
         private const val REFERENCE_HEIGHT_PX = 720f
-        private const val MIN_SCALE = 0.75f
+        private const val MIN_SCALE = 0.55f
         private const val MAX_SCALE = 1.5f
 
         fun from(

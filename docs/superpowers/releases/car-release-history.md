@@ -1,5 +1,37 @@
 # MetroList Car Release History
 
+## 0.2.0 — 2026-09-27
+
+Status: automated pre-physical review complete; packaged and ready for real head-unit acceptance.
+
+Pente-fino changes:
+- isolated the Car APK from phone launchers, deep links, widgets, recognition, alarms, and phone-only entry points;
+- Car notifications return to CarMainActivity instead of the phone UI;
+- removed direct API-31-only foreground-service exception typing from the API-26+ shared/Car runtime path;
+- SAF directory contents are indexed/cached instead of repeatedly scanning thousands of files;
+- Car Library file sizes are checked so truncated copies are rejected before playback;
+- large queue resolution runs off the UI thread;
+- unified logical Music catalog deduplicates Car Library, Car-local downloads, and legacy imports by canonical song id;
+- playback precedence is Car Library local first, then local/legacy download fallback;
+- Search uses the unified offline catalog;
+- legacy imported artwork resolves from the local artwork store offline;
+- queue UI is scrollable, highlights the current item, and supports direct track selection;
+- Library no longer duplicates legacy-import management from More;
+- viewport scaling handles 800x480 correctly and Car typography is normalized to physical viewport pixels;
+- diagnostics expose logical catalog/source counts and active Car Library producer/revision.
+
+Verification:
+- desktop-core, desktop-export, and desktop-app regression tests passed;
+- Car unit tests: 220 passed, 0 failures/errors;
+- Foss/GMS/Izzy regression tests: 153 passed each, 0 failures/errors;
+- full Car lint/assemble gate completed before the final shared MainActivity compatibility patch; its remaining NewApi finding was the direct API-31 exception type in MainActivity;
+- after that patch, Car compilation passed and targeted source verification confirms no direct API-31 exception type usage remains;
+- Car 0.2.0 identity/version test and final package gate passed.
+
+Physical validation:
+- intentionally pending; no installation or head-unit storage mutation was performed.
+
+
 ## 0.1.0 — 2026-09-27
 
 Status: automated gates passed; APK packaged and ready for physical head-unit acceptance.

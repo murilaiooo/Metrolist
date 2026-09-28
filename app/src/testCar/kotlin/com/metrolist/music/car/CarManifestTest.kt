@@ -1,13 +1,12 @@
 package com.metrolist.music.car
 
 import java.io.File
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CarManifestTest {
     @Test
-    fun carManifestDeclaresDedicatedLandscapeLauncher() {
+    fun carManifestDeclaresDedicatedLandscapeLauncherAndRemovesPhoneEntryPoints() {
         val manifest =
             sequenceOf(
                 File("src/car/AndroidManifest.xml"),
@@ -17,11 +16,31 @@ class CarManifestTest {
 
         val xml = manifest.readText()
 
-        assertTrue(xml.contains("android:name=\".CarMainActivity\""))
-        assertTrue(xml.contains("android:screenOrientation=\"landscape\""))
+        assertTrue(xml.contains("""android:name=".CarMainActivity""""))
+        assertTrue(xml.contains("""android:screenOrientation="landscape""""))
         assertTrue(xml.contains("android.intent.category.LAUNCHER"))
-        assertTrue(xml.contains("android:name=\".MainActivityAlias\""))
-        assertTrue(xml.contains("android:name=\".MainActivityStatic\""))
-        assertFalse(xml.contains("android:enabled=\"true\""))
+
+        listOf(
+            ".MainActivity",
+            ".MainActivityAlias",
+            ".MainActivityStatic",
+            ".discord.DiscordOAuthActivity",
+            ".recognition.RecognitionLaunchActivity",
+            ".recognition.RecognitionForegroundService",
+            ".quicksettings.MusicRecognizerTileService",
+            ".widget.MusicWidgetReceiver",
+            ".widget.PlaylistWidgetReceiver",
+            ".widget.TurntableWidgetReceiver",
+            ".widget.MusicRecognizerWidgetReceiver",
+        ).forEach { component ->
+            val declaration = """android:name="$component""""
+            assertTrue(
+                "Expected Car manifest to remove $component",
+                xml.contains(declaration) &&
+                    xml.substringAfter(declaration)
+                        .substringBefore("/>")
+                        .contains("""tools:node="remove""""),
+            )
+        }
     }
 }

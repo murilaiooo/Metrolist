@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -33,18 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.core.content.ContextCompat
 import com.metrolist.music.R
-import com.metrolist.music.car.library.AndroidCarLibraryTreeAccessFactory
 import com.metrolist.music.car.library.CarLibraryIndex
 import com.metrolist.music.car.library.CarLibraryMediaResolver
 import com.metrolist.music.car.library.CarLibraryOpenResult
 import com.metrolist.music.car.library.CarLibraryQueueResolution
 import com.metrolist.music.car.library.CarLibraryRefreshResult
-import com.metrolist.music.car.library.CarLibraryRepository
-import com.metrolist.music.car.library.ContentTreeCarLibraryTreeAccess
-import com.metrolist.music.car.library.SharedPreferencesCarLibraryLocationStore
-import com.metrolist.music.car.service.CarImportService
+import com.metrolist.music.car.library.CarLibrarySession
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -70,27 +64,19 @@ private sealed interface CarLibraryManagementState {
 
 @Composable
 fun CarLibraryScreen(
+    carLibrarySession: CarLibrarySession,
     viewport: CarViewportMetrics,
     connection: PlayerConnection?,
     onOpenNowPlaying: () -> Unit,
 ) {
     val context = LocalContext.current
-    val appContext = context.applicationContext
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
-    val repository =
-        remember(appContext) {
-            CarLibraryRepository(
-                locationStore = SharedPreferencesCarLibraryLocationStore(appContext),
-                accessFactory = AndroidCarLibraryTreeAccessFactory(appContext),
-            )
-        }
-    val mediaResolver = remember(repository) { CarLibraryMediaResolver(repository) }
+    val mediaResolver = carLibrarySession.mediaResolver
 
     var state by remember {
         mutableStateOf<CarLibraryManagementState>(CarLibraryManagementState.Loading)
     }
-    var legacyImportMessage by remember { mutableStateOf<String?>(null) }
     var playbackMessage by remember { mutableStateOf<String?>(null) }
 
     fun takeReadPermission(uri: Uri) {
@@ -108,12 +94,7 @@ fun CarLibraryScreen(
         scope.launch {
             state =
                 withContext(Dispatchers.IO) {
-                    repository.open(
-                        ContentTreeCarLibraryTreeAccess(
-                            resolver = appContext.contentResolver,
-                            treeUri = uri,
-                        ),
-                    ).toManagementState()
+                    carLibrarySession.open(uri).toManagementState()
                 }
         }
     }
@@ -123,7 +104,7 @@ fun CarLibraryScreen(
         scope.launch {
             state =
                 withContext(Dispatchers.IO) {
-                    repository.refresh().toManagementState()
+                    carLibrarySession.refresh().toManagementState()
                 }
         }
     }
@@ -139,31 +120,36 @@ fun CarLibraryScreen(
             return
         }
 
-        when (
+        playbackMessage = context.getString(R.string.car_library_preparing_queue)
+        scope.launch {
             val resolution =
-                mediaResolver.resolveQueue(
-                    songIds = songIds,
-                    startIndex = startIndex,
-                    title = title,
-                )
-        ) {
-            is CarLibraryQueueResolution.Ready -> {
-                playerConnection.playQueue(resolution.queue)
-                playbackMessage =
-                    if (resolution.skippedSongIds.isEmpty()) {
-                        null
-                    } else {
-                        context.getString(
-                            R.string.car_library_skipped_tracks,
-                            resolution.skippedSongIds.size,
-                        )
-                    }
-                onOpenNowPlaying()
-            }
+                withContext(Dispatchers.IO) {
+                    mediaResolver.resolveQueue(
+                        songIds = songIds,
+                        startIndex = startIndex,
+                        title = title,
+                    )
+                }
 
-            is CarLibraryQueueResolution.Unavailable -> {
-                playbackMessage =
-                    context.getString(R.string.car_library_track_unavailable)
+            when (resolution) {
+                is CarLibraryQueueResolution.Ready -> {
+                    playerConnection.playQueue(resolution.queue)
+                    playbackMessage =
+                        if (resolution.skippedSongIds.isEmpty()) {
+                            null
+                        } else {
+                            context.getString(
+                                R.string.car_library_skipped_tracks,
+                                resolution.skippedSongIds.size,
+                            )
+                        }
+                    onOpenNowPlaying()
+                }
+
+                is CarLibraryQueueResolution.Unavailable -> {
+                    playbackMessage =
+                        context.getString(R.string.car_library_track_unavailable)
+                }
             }
         }
     }
@@ -173,26 +159,10 @@ fun CarLibraryScreen(
             uri?.let(::openTree)
         }
 
-    val importBackup =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) {
-                takeReadPermission(uri)
-                val intent =
-                    Intent(appContext, CarImportService::class.java).apply {
-                        action = CarImportService.ACTION_START
-                        data = uri
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                ContextCompat.startForegroundService(appContext, intent)
-                legacyImportMessage =
-                    context.getString(R.string.car_legacy_import_started)
-            }
-        }
-
-    LaunchedEffect(repository) {
+    LaunchedEffect(carLibrarySession) {
         state =
             withContext(Dispatchers.IO) {
-                repository.reopen().toManagementState()
+                carLibrarySession.reopen().toManagementState()
             }
     }
 
@@ -501,32 +471,6 @@ fun CarLibraryScreen(
                     }
                 }
             }
-        }
-
-        HorizontalDivider()
-
-        Text(
-            text = stringResource(R.string.car_legacy_backup),
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            text = stringResource(R.string.car_legacy_backup_desc),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedButton(
-            onClick = { importBackup.launch(arrayOf("*/*")) },
-            modifier =
-                Modifier.sizeIn(
-                    minHeight = viewport.pxToDp(60f, density),
-                ),
-        ) {
-            Text(stringResource(R.string.car_import_legacy_backup))
-        }
-        legacyImportMessage?.let {
-            Text(
-                text = it,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }

@@ -14,31 +14,70 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
-import com.metrolist.music.constants.SongSortType
-import com.metrolist.music.db.MusicDatabase
-import com.metrolist.music.extensions.toMediaItem
+import com.metrolist.music.car.importer.CarArtworkStore
+import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarSongSourceKind
+import com.metrolist.music.car.library.CarUnifiedPlaybackResolver
+import com.metrolist.music.car.library.CarUnifiedQueueResolution
+import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.playback.PlayerConnection
-import com.metrolist.music.playback.queues.ListQueue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CarDownloadsScreen(
-    database: MusicDatabase,
+    catalog: List<CarUnifiedSong>,
+    carLibrarySession: CarLibrarySession,
     connection: PlayerConnection?,
     viewport: CarViewportMetrics,
     onOpenNowPlaying: () -> Unit,
 ) {
+    val context = LocalContext.current.applicationContext
     val density = LocalDensity.current.density
-    val songs by
-        database
-            .downloadedSongs(
-                sortType = SongSortType.CREATE_DATE,
-                descending = true,
-            ).collectAsStateWithLifecycle(initialValue = emptyList())
+    val scope = rememberCoroutineScope()
+    val currentMetadata by
+        connection?.mediaMetadata?.collectAsStateWithLifecycle()
+            ?: remember { mutableStateOf(null) }
+    val resolver =
+        remember(context, carLibrarySession) {
+            CarUnifiedPlaybackResolver(
+                carLibraryResolver = carLibrarySession.mediaResolver,
+                legacyArtworkStore = CarArtworkStore(context.filesDir),
+            )
+        }
+    var resolvingSongId by remember { mutableStateOf<String?>(null) }
+
+    fun play(index: Int) {
+        val playerConnection = connection ?: return
+        if (resolvingSongId != null) return
+        resolvingSongId = catalog[index].id
+        scope.launch {
+            val resolution =
+                withContext(Dispatchers.IO) {
+                    resolver.resolveQueue(
+                        songs = catalog,
+                        startIndex = index,
+                        title = "Music",
+                    )
+                }
+            resolvingSongId = null
+            if (resolution is CarUnifiedQueueResolution.Ready) {
+                playerConnection.playQueue(resolution.queue)
+                onOpenNowPlaying()
+            }
+        }
+    }
 
     Column(
         modifier =
@@ -48,15 +87,15 @@ fun CarDownloadsScreen(
         verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(14f, density)),
     ) {
         Text(
-            text = stringResource(R.string.car_downloads),
+            text = stringResource(R.string.car_music),
             style = MaterialTheme.typography.headlineLarge,
         )
         Text(
             text =
-                if (songs.isEmpty()) {
-                    stringResource(R.string.car_downloads_empty)
+                if (catalog.isEmpty()) {
+                    stringResource(R.string.car_music_empty)
                 } else {
-                    stringResource(R.string.car_downloads_count, songs.size)
+                    stringResource(R.string.car_music_count, catalog.size)
                 },
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -66,45 +105,44 @@ fun CarDownloadsScreen(
             verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(8f, density)),
         ) {
             itemsIndexed(
-                items = songs,
+                items = catalog,
                 key = { _, song -> song.id },
             ) { index, song ->
+                val isCurrent = currentMetadata?.id == song.id
                 Surface(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = connection != null) {
-                                connection?.playQueue(
-                                    ListQueue(
-                                        title = "Downloads",
-                                        items = songs.map { it.toMediaItem() },
-                                        startIndex = index,
-                                    ),
-                                )
-                                onOpenNowPlaying()
-                            },
+                            .clickable(
+                                enabled = connection != null && resolvingSongId == null,
+                                onClick = { play(index) },
+                            ),
                     shape = MaterialTheme.shapes.large,
-                    tonalElevation = viewport.pxToDp(1f, density),
+                    tonalElevation = viewport.pxToDp(if (isCurrent) 5f else 1f, density),
                 ) {
                     Row(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
                                 .padding(
-                                    horizontal = viewport.pxToDp(16f, density),
-                                    vertical = viewport.pxToDp(14f, density),
+                                    horizontal = viewport.pxToDp(18f, density),
+                                    vertical = viewport.pxToDp(16f, density),
                                 ),
+                        horizontalArrangement = Arrangement.spacedBy(viewport.pxToDp(12f, density)),
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = song.title,
                                 style = MaterialTheme.typography.titleMedium,
+                                color =
+                                    if (isCurrent) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
                                 maxLines = 1,
                             )
-                            val artist =
-                                song.orderedArtists
-                                    .joinToString(", ") { it.name }
-                                    .ifBlank { song.album?.title.orEmpty() }
+                            val artist = song.artists.joinToString(", ").ifBlank { song.album.orEmpty() }
                             if (artist.isNotBlank()) {
                                 Text(
                                     text = artist,
@@ -112,6 +150,19 @@ fun CarDownloadsScreen(
                                     maxLines = 1,
                                 )
                             }
+                            Text(
+                                text = sourceLabel(song),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                            )
+                        }
+                        if (song.explicit) {
+                            Text(
+                                text = "E",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -119,3 +170,10 @@ fun CarDownloadsScreen(
         }
     }
 }
+
+private fun sourceLabel(song: CarUnifiedSong): String =
+    buildList {
+        if (CarSongSourceKind.CAR_LIBRARY_LOCAL in song.sourceKinds) add("Car Library")
+        if (CarSongSourceKind.CAR_LOCAL_DOWNLOAD in song.sourceKinds) add("Car download")
+        if (CarSongSourceKind.LEGACY_IMPORTED in song.sourceKinds) add("Legacy backup")
+    }.joinToString(" · ")

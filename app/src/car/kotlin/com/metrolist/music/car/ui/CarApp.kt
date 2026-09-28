@@ -1,13 +1,11 @@
 package com.metrolist.music.car.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -21,18 +19,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
 import com.metrolist.music.car.importer.CarImportRepository
+import com.metrolist.music.car.importer.CarLegacyImportProvenanceStore
 import com.metrolist.music.car.input.CarInputDiagnostics
+import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarUnifiedCatalog
+import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.car.ui.player.CarMiniPlayer
 import com.metrolist.music.car.ui.player.CarNowPlayingScreen
+import com.metrolist.music.constants.SongSortType
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.playback.DownloadUtil
 import com.metrolist.music.playback.PlayerConnection
@@ -49,8 +52,45 @@ fun CarApp(
     importRepository: CarImportRepository,
     inputDiagnostics: CarInputDiagnostics,
 ) {
+    val context = LocalContext.current.applicationContext
     val connection by connectionFlow.collectAsStateWithLifecycle()
+    val localDensity = LocalDensity.current
     var viewport by remember { mutableStateOf(CarViewportMetrics.from(1280, 720)) }
+
+    val carLibrarySession =
+        remember(context) {
+            CarLibrarySession(context)
+        }
+    val provenanceStore =
+        remember(context) {
+            CarLegacyImportProvenanceStore(context)
+        }
+    val downloadedSongs by
+        database
+            .downloadedSongs(
+                sortType = SongSortType.CREATE_DATE,
+                descending = true,
+            ).collectAsStateWithLifecycle(initialValue = emptyList())
+    val carLibraryIndex by carLibrarySession.index.collectAsStateWithLifecycle()
+    val importStatus by importRepository.status.collectAsStateWithLifecycle()
+    var legacySongIds by remember { mutableStateOf(provenanceStore.importedSongIds()) }
+
+    LaunchedEffect(carLibrarySession) {
+        carLibrarySession.reopen()
+    }
+    LaunchedEffect(importStatus) {
+        provenanceStore.markImported(importRepository.completedSongIds())
+        legacySongIds = provenanceStore.importedSongIds()
+    }
+
+    val catalog =
+        remember(carLibraryIndex, downloadedSongs, legacySongIds) {
+            CarUnifiedCatalog.merge(
+                index = carLibraryIndex,
+                downloadedSongs = downloadedSongs,
+                legacySongIds = legacySongIds,
+            )
+        }
 
     MetrolistTheme {
         Surface(
@@ -69,6 +109,8 @@ fun CarApp(
                 downloadUtil = downloadUtil,
                 importRepository = importRepository,
                 inputDiagnostics = inputDiagnostics,
+                carLibrarySession = carLibrarySession,
+                catalog = catalog,
             )
         }
     }
@@ -82,8 +124,9 @@ private fun CarShell(
     downloadUtil: DownloadUtil,
     importRepository: CarImportRepository,
     inputDiagnostics: CarInputDiagnostics,
+    carLibrarySession: CarLibrarySession,
+    catalog: List<CarUnifiedSong>,
 ) {
-    val density = LocalDensity.current.density
     val navigation = remember { CarNavigationState(CarDestination.DOWNLOADS) }
     val stack by navigation.stack.collectAsStateWithLifecycle()
     val destination = stack.last()
@@ -102,7 +145,7 @@ private fun CarShell(
         }
     }
 
-    BackHandler(enabled = stack.size > 1) {
+    androidx.activity.compose.BackHandler(enabled = stack.size > 1) {
         navigation.back()
     }
 
@@ -124,7 +167,8 @@ private fun CarShell(
 
                     CarDestination.DOWNLOADS ->
                         CarDownloadsScreen(
-                            database = database,
+                            catalog = catalog,
+                            carLibrarySession = carLibrarySession,
                             connection = connection,
                             viewport = viewport,
                             onOpenNowPlaying = {
@@ -134,6 +178,7 @@ private fun CarShell(
 
                     CarDestination.LIBRARY ->
                         CarLibraryScreen(
+                            carLibrarySession = carLibrarySession,
                             viewport = viewport,
                             connection = connection,
                             onOpenNowPlaying = {
@@ -143,6 +188,8 @@ private fun CarShell(
 
                     CarDestination.SEARCH ->
                         CarSearchScreen(
+                            catalog = catalog,
+                            carLibrarySession = carLibrarySession,
                             connection = connection,
                             viewport = viewport,
                             onOpenNowPlaying = {
@@ -156,6 +203,8 @@ private fun CarShell(
                             downloadUtil = downloadUtil,
                             importRepository = importRepository,
                             inputDiagnostics = inputDiagnostics,
+                            carLibrarySession = carLibrarySession,
+                            catalog = catalog,
                             viewport = viewport,
                         )
                 }
@@ -203,26 +252,6 @@ private fun CarNavigationRail(
     }
 }
 
-@Composable
-private fun CarSectionPlaceholder(
-    title: String,
-    viewport: CarViewportMetrics,
-) {
-    val density = LocalDensity.current.density
-    Box(
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(viewport.pxToDp(36f, density)),
-        contentAlignment = Alignment.TopStart,
-    ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineLarge,
-        )
-    }
-}
-
 private data class CarNavItem(
     val destination: CarDestination,
     val iconRes: Int,
@@ -232,7 +261,7 @@ private data class CarNavItem(
 private val CAR_NAV_ITEMS =
     listOf(
         CarNavItem(CarDestination.NOW_PLAYING, R.drawable.music_note, R.string.now_playing),
-        CarNavItem(CarDestination.DOWNLOADS, R.drawable.download, R.string.car_downloads),
+        CarNavItem(CarDestination.DOWNLOADS, R.drawable.download, R.string.car_music),
         CarNavItem(CarDestination.LIBRARY, R.drawable.library_music, R.string.car_library),
         CarNavItem(CarDestination.SEARCH, R.drawable.search, R.string.car_search),
         CarNavItem(CarDestination.MORE, R.drawable.more_horiz, R.string.car_more),

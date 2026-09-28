@@ -7,7 +7,6 @@
 
 package com.metrolist.music.playback
 
-import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -710,7 +709,7 @@ class MusicService :
                     PendingIntent.getActivity(
                         this,
                         0,
-                        Intent(this, MainActivity::class.java),
+                        appUiIntent(),
                         PendingIntent.FLAG_IMMUTABLE,
                     ),
                 ).setBitmapLoader(CoilBitmapLoader(this, scope))
@@ -4211,13 +4210,19 @@ class MusicService :
         )
     }
 
+    private fun appUiIntent(): Intent =
+        if (BuildConfig.IS_CAR) {
+            Intent().setClassName(this, "com.metrolist.music.CarMainActivity")
+        } else {
+            Intent(this, MainActivity::class.java)
+        }
     private fun createFallbackForegroundNotification(): Notification {
         ensureForegroundChannelExists()
         val pending =
             PendingIntent.getActivity(
                 this,
                 0,
-                Intent(this, MainActivity::class.java),
+                appUiIntent(),
                 PendingIntent.FLAG_IMMUTABLE,
             )
         return NotificationCompat
@@ -4247,8 +4252,13 @@ class MusicService :
                 startForeground(NOTIFICATION_ID, notification)
             }
             true
-        } catch (e: ForegroundServiceStartNotAllowedException) {
-            Timber.tag(TAG).w(e, deniedMessage)
+        } catch (e: IllegalStateException) {
+            if (isForegroundServiceStartNotAllowedException(e)) {
+                Timber.tag(TAG).w(e, deniedMessage)
+            } else {
+                Timber.tag(TAG).e(e, failureMessage)
+                reportException(e)
+            }
             if (stopOnFailure) {
                 stopSelf()
             }
@@ -4367,8 +4377,6 @@ class MusicService :
     ) {
         try {
             super.onUpdateNotification(session, startInForegroundRequired)
-        } catch (e: ForegroundServiceStartNotAllowedException) {
-            handleForegroundServiceStartNotAllowed(e)
         } catch (e: IllegalStateException) {
             if (isForegroundServiceStartNotAllowedException(e)) {
                 handleForegroundServiceStartNotAllowed(e)
@@ -4455,7 +4463,7 @@ class MusicService :
     }
 
     private fun openPlaylistWidgetTarget(source: Intent) {
-        val activityIntent = Intent(this, MainActivity::class.java).apply {
+        val activityIntent = appUiIntent().apply {
             action = MainActivity.ACTION_OPEN_WIDGET_TARGET
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(
@@ -4661,7 +4669,7 @@ class MusicService :
 
     private fun isForegroundServiceStartNotAllowedException(error: IllegalStateException): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            error.javaClass.name == ForegroundServiceStartNotAllowedException::class.java.name
+            error.javaClass.name == "android.app.ForegroundServiceStartNotAllowedException"
 
     /**
      * Updates all app widgets with current playback state

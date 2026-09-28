@@ -20,7 +20,12 @@ class CarDiagnosticsSnapshotTest {
                 totalStorageBytes = 16L * 1024 * 1024 * 1024,
                 roomDownloadedCount = 12,
                 media3CachedKeyCount = 12,
-                importState = "Idle",
+                                importState = "Idle",
+                carLibraryState = "MetroList Windows 0.3.0 · 10 tracks · 2 playlists · rev abc",
+                logicalCatalogCount = 12,
+                carLibraryPrimaryCount = 10,
+                carLocalPrimaryCount = 1,
+                legacyPrimaryCount = 1,
                 lastInputObservation = "keyCode=85, scanCode=0, source=257",
             )
 

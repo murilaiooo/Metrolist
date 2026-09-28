@@ -4,6 +4,7 @@ enum class CarLibraryUnavailableReason {
     NO_ACTIVE_LIBRARY,
     UNKNOWN_TRACK,
     MEDIA_MISSING,
+    MEDIA_CORRUPT,
     ACCESS_LOST,
 }
 

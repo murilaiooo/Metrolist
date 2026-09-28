@@ -41,4 +41,22 @@ class ArtworkCacheTest {
         assertNull(cache.ensure("https://example.invalid/fails"))
         assertEquals(0L, Files.list(dir).use { it.count() })
     }
-}
+
+    @Test
+    fun prefersNativeHighResolutionCdnVariants() {
+        val google =
+            highQualityArtworkCandidates(
+                "https://yt3.googleusercontent.com/example=w120-h120-l90-rj",
+            )
+        assertEquals(
+            "https://yt3.googleusercontent.com/example=w1200-h1200-p-l90-rj",
+            google.first(),
+        )
+
+        val ytimg =
+            highQualityArtworkCandidates(
+                "https://i.ytimg.com/vi/abc123/hqdefault.jpg?token=1",
+            )
+        assertTrue(ytimg.first().contains("/maxresdefault.jpg"))
+        assertTrue(ytimg.last().contains("/hqdefault.jpg"))
+    }}

@@ -64,7 +64,19 @@ class CarMainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+    override fun onKeyDown(
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean =
+        handleCarKeyEvent(event) || super.onKeyDown(keyCode, event)
+
+    override fun onKeyUp(
+        keyCode: Int,
+        event: KeyEvent,
+    ): Boolean =
+        handleCarKeyEvent(event) || super.onKeyUp(keyCode, event)
+
+    private fun handleCarKeyEvent(event: KeyEvent): Boolean {
         val signature =
             CarKeySignature(
                 keyCode = event.keyCode,
@@ -74,12 +86,9 @@ class CarMainActivity : ComponentActivity() {
         val decision = inputRouter.decide(signature, event.action)
         inputDiagnostics.record(signature, event.action, decision)
 
-        if (decision.consume) {
-            dispatchConfirmedVendorAction(decision)
-            return true
-        }
-
-        return super.dispatchKeyEvent(event)
+        if (!decision.consume) return false
+        dispatchConfirmedVendorAction(decision)
+        return true
     }
 
     private fun dispatchConfirmedVendorAction(decision: CarInputDecision) {

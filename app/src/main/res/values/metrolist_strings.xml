@@ -95,6 +95,7 @@
     <string name="car_library_track_count">%1$d tracks</string>
     <string name="car_player_starting">Player is still starting. Try again in a moment.</string>
     <string name="car_library_track_unavailable">This track is unavailable in the selected Car Library.</string>
+    <string name="car_library_preparing_queue">Preparing local queue…</string>
     <string name="car_library_skipped_tracks">%1$d unavailable tracks were skipped.</string>
     <string name="car_downloads_empty">No legacy imported or downloaded tracks yet.</string>
     <string name="car_downloads_count">%1$d downloaded tracks</string>
@@ -1037,4 +1038,7 @@
     <string name="stream_source_android_vr_desc">Android VR clients (all versions).</string>
     <string name="stream_source_web_creator">WEB_CREATOR</string>
     <string name="stream_source_web_creator_desc">Creator web client.</string>
-</resources>
+    <string name="car_music">Music</string>
+    <string name="car_music_empty">No offline music yet. Select a Car Library folder or download music on this device.</string>
+    <string name="car_music_count">%1$d offline tracks · one catalog</string>
+    <string name="car_search_unified_desc">Search all offline music from Car Library, device downloads, and legacy backups.</string></resources>

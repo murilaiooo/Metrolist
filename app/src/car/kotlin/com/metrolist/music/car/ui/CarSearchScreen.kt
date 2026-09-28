@@ -13,80 +13,56 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
-import com.metrolist.music.car.library.AndroidCarLibraryTreeAccessFactory
-import com.metrolist.music.car.library.CarLibraryIndex
-import com.metrolist.music.car.library.CarLibraryMediaResolver
-import com.metrolist.music.car.library.CarLibraryOpenResult
-import com.metrolist.music.car.library.CarLibraryQueueResolution
-import com.metrolist.music.car.library.CarLibraryRepository
-import com.metrolist.music.car.library.SharedPreferencesCarLibraryLocationStore
+import com.metrolist.music.car.importer.CarArtworkStore
+import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarUnifiedCatalog
+import com.metrolist.music.car.library.CarUnifiedPlaybackResolver
+import com.metrolist.music.car.library.CarUnifiedQueueResolution
+import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
 fun CarSearchScreen(
+    catalog: List<CarUnifiedSong>,
+    carLibrarySession: CarLibrarySession,
     connection: PlayerConnection?,
     viewport: CarViewportMetrics,
     onOpenNowPlaying: () -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
     val density = LocalDensity.current.density
-    val repository =
-        remember(context) {
-            CarLibraryRepository(
-                locationStore = SharedPreferencesCarLibraryLocationStore(context),
-                accessFactory = AndroidCarLibraryTreeAccessFactory(context),
+    val scope = rememberCoroutineScope()
+    val currentMetadata by
+        connection?.mediaMetadata?.collectAsStateWithLifecycle()
+            ?: remember { mutableStateOf(null) }
+    val resolver =
+        remember(context, carLibrarySession) {
+            CarUnifiedPlaybackResolver(
+                carLibraryResolver = carLibrarySession.mediaResolver,
+                legacyArtworkStore = CarArtworkStore(context.filesDir),
             )
         }
-    val resolver = remember(repository) { CarLibraryMediaResolver(repository) }
 
-    var index by remember { mutableStateOf<CarLibraryIndex?>(null) }
-    var status by remember { mutableStateOf<String?>(null) }
     var query by remember { mutableStateOf("") }
-
-    LaunchedEffect(repository) {
-        when (val result = withContext(Dispatchers.IO) { repository.reopen() }) {
-            is CarLibraryOpenResult.Opened -> {
-                index = result.index
-                status = null
-            }
-            is CarLibraryOpenResult.Unavailable -> {
-                index = null
-                status = result.reason
-            }
-            is CarLibraryOpenResult.Invalid -> {
-                index = null
-                status = result.errors.joinToString(" · ")
-            }
-        }
-    }
+    var resolvingSongId by remember { mutableStateOf<String?>(null) }
 
     val results =
-        remember(index, query) {
-            val normalized = query.trim()
-            if (normalized.isBlank()) {
-                emptyList()
-            } else {
-                index
-                    ?.songs
-                    .orEmpty()
-                    .filter { song ->
-                        song.title.contains(normalized, ignoreCase = true) ||
-                            song.artists.any { it.name.contains(normalized, ignoreCase = true) } ||
-                            song.album?.name?.contains(normalized, ignoreCase = true) == true
-                    }
-            }
+        remember(catalog, query) {
+            CarUnifiedCatalog.search(catalog, query)
         }
 
     Column(
@@ -101,7 +77,7 @@ fun CarSearchScreen(
             style = MaterialTheme.typography.headlineLarge,
         )
         Text(
-            text = stringResource(R.string.car_search_local_desc),
+            text = stringResource(R.string.car_search_unified_desc),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
@@ -112,14 +88,7 @@ fun CarSearchScreen(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        status?.let {
-            Text(
-                text = stringResource(R.string.car_search_no_library),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        if (query.isNotBlank() && results.isEmpty() && index != null) {
+        if (query.isNotBlank() && results.isEmpty()) {
             Text(
                 text = stringResource(R.string.car_search_no_results),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -134,37 +103,50 @@ fun CarSearchScreen(
                 items = results,
                 key = { _, song -> song.id },
             ) { resultIndex, song ->
+                val isCurrent = currentMetadata?.id == song.id
                 Surface(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .clickable(enabled = connection != null) {
-                                val resolution =
-                                    resolver.resolveQueue(
-                                        songIds = results.map { it.id },
-                                        startIndex = resultIndex,
-                                        title = "Search",
-                                    )
-                                if (resolution is CarLibraryQueueResolution.Ready) {
-                                    connection?.playQueue(resolution.queue)
-                                    onOpenNowPlaying()
+                            .clickable(
+                                enabled = connection != null && resolvingSongId == null,
+                            ) {
+                                val playerConnection = connection ?: return@clickable
+                                resolvingSongId = song.id
+                                scope.launch {
+                                    val resolution =
+                                        withContext(Dispatchers.IO) {
+                                            resolver.resolveQueue(
+                                                songs = results,
+                                                startIndex = resultIndex,
+                                                title = "Search",
+                                            )
+                                        }
+                                    resolvingSongId = null
+                                    if (resolution is CarUnifiedQueueResolution.Ready) {
+                                        playerConnection.playQueue(resolution.queue)
+                                        onOpenNowPlaying()
+                                    }
                                 }
                             },
                     shape = MaterialTheme.shapes.large,
-                    tonalElevation = viewport.pxToDp(1f, density),
+                    tonalElevation = viewport.pxToDp(if (isCurrent) 5f else 1f, density),
                 ) {
                     Column(
-                        modifier = Modifier.padding(viewport.pxToDp(16f, density)),
+                        modifier = Modifier.padding(viewport.pxToDp(18f, density)),
                     ) {
                         Text(
                             text = song.title,
                             style = MaterialTheme.typography.titleMedium,
+                            color =
+                                if (isCurrent) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                },
                             maxLines = 1,
                         )
-                        val artist =
-                            song.artists
-                                .joinToString(", ") { it.name }
-                                .ifBlank { song.album?.name.orEmpty() }
+                        val artist = song.artists.joinToString(", ").ifBlank { song.album.orEmpty() }
                         if (artist.isNotBlank()) {
                             Text(
                                 text = artist,

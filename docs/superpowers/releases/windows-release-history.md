@@ -1,5 +1,20 @@
 # MetroList Windows Release History
 
+## 0.3.1 — 2026-09-27
+
+Status: packaged; automated pre-physical review complete.
+
+Changes:
+- artwork cache requests native high-resolution CDN variants before Car Library export;
+- existing low-resolution cached artwork can be upgraded from the original CDN source without synthetic upscaling;
+- YouTube video artwork prefers maxres/sd variants when available and safely falls back to the original thumbnail.
+
+Verification:
+- desktop-core, desktop-export, and desktop-app tests passed;
+- high-resolution CDN selection tests passed;
+- Windows 0.3.1 MSI packaged successfully.
+
+
 ## 0.3.0 — 2026-09-27
 
 Status: built and automated gates verified; awaiting user installation/manual smoke.

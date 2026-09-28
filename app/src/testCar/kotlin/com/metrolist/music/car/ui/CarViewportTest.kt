@@ -21,8 +21,8 @@ class CarViewportTest {
 
     @Test
     fun invalidViewportClampsAtSafeMinimum() {
-        assertEquals(0.75f, CarViewportMetrics.from(0, 0).scale, 0.0001f)
-        assertEquals(0.75f, CarViewportMetrics.from(-100, -50).scale, 0.0001f)
+        assertEquals(0.55f, CarViewportMetrics.from(0, 0).scale, 0.0001f)
+        assertEquals(0.55f, CarViewportMetrics.from(-100, -50).scale, 0.0001f)
     }
 
     @Test
@@ -32,4 +32,8 @@ class CarViewportTest {
         assertEquals(32f, metrics.pxToDp(64f, density = 2f).value, 0.0001f)
         assertEquals(80f, metrics.pxToDp(80f, density = 0f).value, 0.0001f)
     }
-}
+
+    @Test
+    fun common800x480ViewportUsesNaturalScale() {
+        assertEquals(0.625f, CarViewportMetrics.from(800, 480).scale, 0.0001f)
+    }}

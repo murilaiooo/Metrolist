@@ -33,6 +33,9 @@ import com.metrolist.music.car.diagnostics.CarDiagnosticsSnapshot
 import com.metrolist.music.car.importer.CarImportRepository
 import com.metrolist.music.car.importer.CarImportStatus
 import com.metrolist.music.car.input.CarInputDiagnostics
+import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarSongSourceKind
+import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.car.service.CarImportService
 import com.metrolist.music.constants.SongSortType
 import com.metrolist.music.db.MusicDatabase
@@ -44,6 +47,8 @@ fun CarMoreScreen(
     downloadUtil: DownloadUtil,
     importRepository: CarImportRepository,
     inputDiagnostics: CarInputDiagnostics,
+    carLibrarySession: CarLibrarySession,
+    catalog: List<CarUnifiedSong>,
     viewport: CarViewportMetrics,
 ) {
     val context = LocalContext.current
@@ -55,6 +60,7 @@ fun CarMoreScreen(
                 descending = true,
             ).collectAsStateWithLifecycle(initialValue = emptyList())
     val importStatus by importRepository.status.collectAsStateWithLifecycle()
+    val carLibraryIndex by carLibrarySession.index.collectAsStateWithLifecycle()
     val lastInput by inputDiagnostics.lastObservation.collectAsStateWithLifecycle()
 
     fun startImportAction(action: String) {
@@ -106,6 +112,19 @@ fun CarMoreScreen(
             roomDownloadedCount = downloaded.size,
             media3CachedKeyCount = downloadUtil.downloadCache.keys.size,
             importState = importStatus.toDisplayText(),
+            carLibraryState =
+                carLibraryIndex?.let { index ->
+                    index.producer.product + " " + index.producer.version +
+                        " · " + index.songs.size + " tracks · " +
+                        index.playlists.size + " playlists · rev " + index.revision.take(16)
+                } ?: "not selected / unavailable",
+            logicalCatalogCount = catalog.size,
+            carLibraryPrimaryCount =
+                catalog.count { it.primarySource == CarSongSourceKind.CAR_LIBRARY_LOCAL },
+            carLocalPrimaryCount =
+                catalog.count { it.primarySource == CarSongSourceKind.CAR_LOCAL_DOWNLOAD },
+            legacyPrimaryCount =
+                catalog.count { it.primarySource == CarSongSourceKind.LEGACY_IMPORTED },
             lastInputObservation = observationText,
         )
 

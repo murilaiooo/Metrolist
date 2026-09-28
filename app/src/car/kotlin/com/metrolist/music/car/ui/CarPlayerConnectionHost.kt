@@ -1,6 +1,5 @@
 package com.metrolist.music.car.ui
 
-import android.app.ForegroundServiceStartNotAllowedException
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -55,8 +54,6 @@ class CarPlayerConnectionHost(
                 } else {
                     context.startService(serviceIntent)
                 }
-            } catch (error: ForegroundServiceStartNotAllowedException) {
-                Timber.w(error, "Car cannot start MusicService from background")
             } catch (error: IllegalStateException) {
                 Timber.w(error, "Car failed to start MusicService")
             }

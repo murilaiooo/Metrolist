@@ -92,6 +92,16 @@ class CarImportRepository @Inject constructor(
             }
     }
 
+    fun completedSongIds(): Set<String> =
+        runCatching {
+            journalStore.load()
+                ?.takeIf { it.phase == CarImportPhase.COMPLETE }
+                ?.songs
+                ?.values
+                ?.filter(CarSongImportRecord::completed)
+                ?.mapTo(linkedSetOf(), CarSongImportRecord::songId)
+                .orEmpty()
+        }.getOrDefault(emptySet())
     fun refreshFromDisk() {
         _status.value = initialStatus()
     }

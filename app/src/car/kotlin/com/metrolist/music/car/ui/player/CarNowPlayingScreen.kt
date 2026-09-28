@@ -1,6 +1,8 @@
 package com.metrolist.music.car.ui.player
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,13 +13,17 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -281,13 +287,80 @@ fun CarNowPlayingScreen(
             },
             title = { Text(stringResource(R.string.car_queue)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(8f, density))) {
-                    queue.take(10).forEach { window ->
-                        Text(
-                            text = window.mediaItem.mediaMetadata.title?.toString().orEmpty(),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                val currentIndex =
+                    runCatching { connection?.player?.currentMediaItemIndex ?: -1 }
+                        .getOrDefault(-1)
+                LazyColumn(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = viewport.pxToDp(430f, density)),
+                    verticalArrangement =
+                        Arrangement.spacedBy(viewport.pxToDp(8f, density)),
+                ) {
+                    itemsIndexed(
+                        items = queue,
+                        key = { index, window ->
+                            window.mediaItem.mediaId + ":" + index
+                        },
+                    ) { index, window ->
+                        val isCurrent = index == currentIndex
+                        Surface(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .sizeIn(minHeight = viewport.pxToDp(64f, density))
+                                    .clickable {
+                                        connection?.player?.seekToDefaultPosition(index)
+                                        showQueue = false
+                                    },
+                            shape = MaterialTheme.shapes.medium,
+                            tonalElevation = viewport.pxToDp(if (isCurrent) 5f else 1f, density),
+                        ) {
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            horizontal = viewport.pxToDp(14f, density),
+                                            vertical = viewport.pxToDp(12f, density),
+                                        ),
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(viewport.pxToDp(12f, density)),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = (index + 1).toString(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = window.mediaItem.mediaMetadata.title?.toString().orEmpty(),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color =
+                                            if (isCurrent) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.onSurface
+                                            },
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    window.mediaItem.mediaMetadata.artist
+                                        ?.toString()
+                                        ?.takeIf(String::isNotBlank)
+                                        ?.let { artist ->
+                                            Text(
+                                                text = artist,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                }
+                            }
+                        }
                     }
                 }
             },

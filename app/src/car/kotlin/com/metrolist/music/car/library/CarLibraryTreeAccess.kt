@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 sealed interface CarLibraryLocation {
     data class FilePath(
@@ -25,6 +26,10 @@ interface CarLibraryTreeAccess {
     fun exists(relativePath: String): Boolean
 
     fun locator(relativePath: String): String
+
+    fun size(relativePath: String): Long? = null
+
+    fun invalidateCaches() = Unit
 }
 
 fun interface CarLibraryTreeAccessFactory {
@@ -94,6 +99,12 @@ class FileCarLibraryTreeAccess(
     override fun locator(relativePath: String): String =
         resolve(relativePath).toUri().toString()
 
+    override fun size(relativePath: String): Long? {
+        val path = resolve(relativePath)
+        if (!Files.isRegularFile(path)) return null
+        return runCatching { Files.size(path) }.getOrNull()
+    }
+
     private fun resolve(relativePath: String): Path {
         require(relativePath.isNotBlank()) { "Relative Car Library path cannot be blank" }
 
@@ -131,12 +142,21 @@ class ContentTreeCarLibraryTreeAccess(
     private val resolver: ContentResolver,
     private val treeUri: Uri,
 ) : CarLibraryTreeAccess {
+    private data class DocumentEntry(
+        val documentId: String,
+        val uri: Uri,
+        val size: Long?,
+    )
+
+    private val childrenCache =
+        ConcurrentHashMap<String, Map<String, DocumentEntry>>()
+
     override val location: CarLibraryLocation =
         CarLibraryLocation.TreeUri(treeUri.toString())
 
     override fun readText(relativePath: String): String? {
-        val uri = resolveDocument(relativePath) ?: return null
-        return resolver.openInputStream(uri)
+        val entry = resolveDocument(relativePath) ?: return null
+        return resolver.openInputStream(entry.uri)
             ?.bufferedReader()
             ?.use { it.readText() }
     }
@@ -147,9 +167,16 @@ class ContentTreeCarLibraryTreeAccess(
     override fun locator(relativePath: String): String =
         requireNotNull(resolveDocument(relativePath)) {
             "Car Library entry is unavailable: " + relativePath
-        }.toString()
+        }.uri.toString()
 
-    private fun resolveDocument(relativePath: String): Uri? {
+    override fun size(relativePath: String): Long? =
+        resolveDocument(relativePath)?.size
+
+    override fun invalidateCaches() {
+        childrenCache.clear()
+    }
+
+    private fun resolveDocument(relativePath: String): DocumentEntry? {
         val segments = relativePath.split("/").filter(String::isNotBlank)
         if (segments.isEmpty() || segments.any { it == "." || it == ".." }) return null
 
@@ -157,28 +184,30 @@ class ContentTreeCarLibraryTreeAccess(
             runCatching { DocumentsContract.getTreeDocumentId(treeUri) }
                 .getOrNull()
                 ?: return null
-
-        var documentUri =
-            DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        var current =
+            DocumentEntry(
+                documentId = documentId,
+                uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId),
+                size = null,
+            )
 
         segments.forEach { segment ->
-            val child =
-                findChild(
-                    parentDocumentId = documentId,
-                    displayName = segment,
-                )
-                    ?: return null
-            documentId = child.first
-            documentUri = child.second
+            current = findChild(documentId, segment) ?: return null
+            documentId = current.documentId
         }
 
-        return documentUri
+        return current
     }
 
     private fun findChild(
         parentDocumentId: String,
         displayName: String,
-    ): Pair<String, Uri>? {
+    ): DocumentEntry? =
+        childrenFor(parentDocumentId)[displayName]
+
+    private fun childrenFor(parentDocumentId: String): Map<String, DocumentEntry> {
+        childrenCache[parentDocumentId]?.let { return it }
+
         val childrenUri =
             DocumentsContract.buildChildDocumentsUriUsingTree(
                 treeUri,
@@ -188,7 +217,9 @@ class ContentTreeCarLibraryTreeAccess(
             arrayOf(
                 DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_SIZE,
             )
+        val loaded = linkedMapOf<String, DocumentEntry>()
 
         resolver.query(
             childrenUri,
@@ -197,27 +228,33 @@ class ContentTreeCarLibraryTreeAccess(
             null,
             null,
         )?.use { cursor ->
-            val idIndex =
-                cursor.getColumnIndex(
-                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                )
-            val nameIndex =
-                cursor.getColumnIndex(
-                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                )
+            val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+            if (idIndex < 0 || nameIndex < 0) {
+                return@use
+            }
 
             while (cursor.moveToNext()) {
-                if (idIndex < 0 || nameIndex < 0) return null
-                if (cursor.getString(nameIndex) != displayName) continue
-
-                val childId = cursor.getString(idIndex)
-                return childId to
-                    DocumentsContract.buildDocumentUriUsingTree(
-                        treeUri,
-                        childId,
+                val name = cursor.getString(nameIndex) ?: continue
+                val childId = cursor.getString(idIndex) ?: continue
+                val size =
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                        cursor.getLong(sizeIndex)
+                    } else {
+                        null
+                    }
+                loaded[name] =
+                    DocumentEntry(
+                        documentId = childId,
+                        uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, childId),
+                        size = size,
                     )
             }
         }
-        return null
+
+        val immutable = loaded.toMap()
+        childrenCache[parentDocumentId] = immutable
+        return immutable
     }
 }

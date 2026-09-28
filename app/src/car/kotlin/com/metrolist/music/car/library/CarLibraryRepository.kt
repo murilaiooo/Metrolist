@@ -74,6 +74,7 @@ class CarLibraryRepository(
                 )
 
         val previous = activeIndex
+        access.invalidateCaches()
         val raw =
             runCatching { access.readText(MANIFEST_PATH) }
                 .getOrElse { error ->
@@ -144,6 +145,16 @@ class CarLibraryRepository(
             )
         }
 
+        val observedMediaSize =
+            runCatching { access.size(song.mediaPath) }
+                .getOrNull()
+        if (observedMediaSize != null && observedMediaSize != song.fileSize) {
+            return CarLibraryTrackAvailability.Unavailable(
+                songId = songId,
+                reason = CarLibraryUnavailableReason.MEDIA_CORRUPT,
+            )
+        }
+
         val mediaLocator =
             runCatching { access.locator(song.mediaPath) }
                 .getOrElse {
@@ -156,8 +167,18 @@ class CarLibraryRepository(
         val artworkLocator =
             song.artworkPath
                 ?.takeIf { artworkPath ->
-                    runCatching { access.exists(artworkPath) }
-                        .getOrDefault(false)
+                    val exists =
+                        runCatching { access.exists(artworkPath) }
+                            .getOrDefault(false)
+                    if (!exists) {
+                        false
+                    } else {
+                        val expectedSize = song.artworkFileSize
+                        val observedSize =
+                            runCatching { access.size(artworkPath) }
+                                .getOrNull()
+                        expectedSize == null || observedSize == null || observedSize == expectedSize
+                    }
                 }
                 ?.let { artworkPath ->
                     runCatching { access.locator(artworkPath) }

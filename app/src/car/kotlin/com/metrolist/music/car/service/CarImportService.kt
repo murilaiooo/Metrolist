@@ -20,6 +20,7 @@ import com.metrolist.music.car.importer.CarImportPhase
 import com.metrolist.music.car.importer.CarImportProgress
 import com.metrolist.music.car.importer.CarImportRepository
 import com.metrolist.music.car.importer.CarImportResult
+import com.metrolist.music.car.importer.CarLegacyImportProvenanceStore
 import com.metrolist.music.car.importer.CarMedia3ImportTarget
 import com.metrolist.music.car.importer.CarPortableArchiveValidator
 import com.metrolist.music.car.importer.CarRoomImportTarget
@@ -27,6 +28,7 @@ import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.playback.DownloadUtil
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
+import timber.log.Timber
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -156,6 +158,10 @@ class CarImportService : Service() {
                 repository.updateProgress(source.identity, progress)
                 updateNotification(progress)
             }
+        if (result is CarImportResult.Success) {
+            CarLegacyImportProvenanceStore(this)
+                .markImported(repository.completedSongIds())
+        }
         repository.applyResult(source.identity, result)
     }
 
@@ -192,10 +198,14 @@ class CarImportService : Service() {
     }
 
     private fun updateNotification(progress: CarImportProgress) {
-        NotificationManagerCompat.from(this).notify(
-            NOTIFICATION_ID,
-            buildNotification(progress),
-        )
+        try {
+            NotificationManagerCompat.from(this).notify(
+                NOTIFICATION_ID,
+                buildNotification(progress),
+            )
+        } catch (error: SecurityException) {
+            Timber.w(error, "Car import notification permission unavailable")
+        }
     }
 
     private fun buildNotification(progress: CarImportProgress?) =

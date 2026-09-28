@@ -2,6 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Car does not expose phone-only recognition/alarm capabilities. -->
+    <uses-permission
+        android:name="android.permission.RECORD_AUDIO"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"
+        tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        tools:node="remove" />
+    <uses-feature
+        android:name="android.hardware.microphone"
+        tools:node="remove" />
+
     <application>
         <activity
             android:name=".CarMainActivity"
@@ -15,20 +29,28 @@
             </intent-filter>
         </activity>
 
-        <activity-alias
-            android:name=".MainActivityAlias"
-            android:enabled="false"
-            tools:replace="android:enabled" />
-
-        <activity-alias
-            android:name=".MainActivityStatic"
-            android:enabled="false"
-            tools:replace="android:enabled" />
+        <!-- Remove phone/mobile entry points and utilities from the dedicated Car APK. -->
+        <activity android:name=".MainActivity" tools:node="remove" />
+        <activity-alias android:name=".MainActivityAlias" tools:node="remove" />
+        <activity-alias android:name=".MainActivityStatic" tools:node="remove" />
+        <activity android:name=".discord.DiscordOAuthActivity" tools:node="remove" />
+        <activity android:name="com.yalantis.ucrop.UCropActivity" tools:node="remove" />
+        <activity android:name=".recognition.RecognitionLaunchActivity" tools:node="remove" />
 
         <service
             android:name=".car.service.CarImportService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <service android:name=".recognition.RecognitionForegroundService" tools:node="remove" />
+        <service android:name=".quicksettings.MusicRecognizerTileService" tools:node="remove" />
+
+        <receiver android:name=".listentogether.ListenTogetherActionReceiver" tools:node="remove" />
+        <receiver android:name=".playback.alarm.MusicAlarmReceiver" tools:node="remove" />
+        <receiver android:name=".playback.alarm.MusicAlarmRescheduleReceiver" tools:node="remove" />
+        <receiver android:name=".widget.MusicWidgetReceiver" tools:node="remove" />
+        <receiver android:name=".widget.PlaylistWidgetReceiver" tools:node="remove" />
+        <receiver android:name=".widget.TurntableWidgetReceiver" tools:node="remove" />
+        <receiver android:name=".widget.MusicRecognizerWidgetReceiver" tools:node="remove" />
 
         <meta-data
             android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
