@@ -20,5 +20,4 @@ fun defaultCarNowPlayingControls(): List<CarPlayerControl> =
         CarPlayerControl.QUEUE,
         CarPlayerControl.SHUFFLE,
         CarPlayerControl.REPEAT,
-        CarPlayerControl.FAVORITE,
     )

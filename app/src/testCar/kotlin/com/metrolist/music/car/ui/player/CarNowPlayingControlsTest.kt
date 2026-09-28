@@ -16,6 +16,7 @@ class CarNowPlayingControlsTest {
         assertTrue(CarPlayerControl.QUEUE in controls)
         assertTrue(CarPlayerControl.SHUFFLE in controls)
         assertTrue(CarPlayerControl.REPEAT in controls)
+        assertFalse(CarPlayerControl.FAVORITE in controls)
         assertFalse(controls.any { it.name.contains("VOLUME") })
     }
 }

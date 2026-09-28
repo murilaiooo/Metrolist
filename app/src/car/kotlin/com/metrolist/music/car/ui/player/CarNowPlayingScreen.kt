@@ -42,6 +42,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -92,41 +93,32 @@ fun CarNowPlayingScreen(
                 ?.takeIf { it != C.TIME_UNSET && it > 0L }
         }.getOrNull() ?: ((metadata?.duration ?: 0).coerceAtLeast(0) * 1000L)
 
+    val layout = CarNowPlayingLayoutMetrics.forViewport(viewport)
+    val horizontalPadding = (layout.horizontalPaddingPx / density).dp
+    val verticalPadding = (layout.verticalPaddingPx / density).dp
+    val gap = (layout.gapPx / density).dp
+    val controlsWidth = (layout.controlsWidthPx / density).dp
+    val artworkSize = (layout.artworkSizePx / density).dp
+    val previousNextSize = (layout.previousNextHitPx / density).dp
+    val playPauseSize = (layout.playPauseHitPx / density).dp
+    val secondaryActionSize = (layout.secondaryHitPx / density).dp
+
     Row(
         modifier =
             Modifier
                 .fillMaxSize()
-                .padding(viewport.pxToDp(28f, density)),
-        horizontalArrangement = Arrangement.spacedBy(viewport.pxToDp(36f, density)),
+                .padding(
+                    horizontal = horizontalPadding,
+                    vertical = verticalPadding,
+                ),
+        horizontalArrangement = Arrangement.spacedBy(gap),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val artworkSize = viewport.pxToDp(430f, density)
-        Box(
+        Column(
             modifier =
                 Modifier
-                    .size(artworkSize)
-                    .clip(MaterialTheme.shapes.extraLarge),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (metadata?.thumbnailUrl != null) {
-                AsyncImage(
-                    model = metadata?.thumbnailUrl,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Icon(
-                    painter = painterResource(R.drawable.music_note),
-                    contentDescription = null,
-                    modifier = Modifier.size(viewport.pxToDp(150f, density)),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Column(
-            modifier = Modifier.weight(1f).fillMaxHeight(),
+                    .width(controlsWidth)
+                    .fillMaxHeight(),
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
@@ -148,7 +140,7 @@ fun CarNowPlayingScreen(
                 )
             }
 
-            Spacer(Modifier.height(viewport.pxToDp(24f, density)))
+            Spacer(Modifier.height(viewport.pxToDp(18f, density)))
 
             Slider(
                 value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
@@ -165,60 +157,58 @@ fun CarNowPlayingScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Spacer(Modifier.height(viewport.pxToDp(8f, density)))
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement =
+                    Arrangement.spacedBy(viewport.pxToDp(16f, density)),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val secondarySize = viewport.pxToDp(72f, density)
-                val primarySize = viewport.pxToDp(96f, density)
-
                 IconButton(
                     onClick = { connection?.seekToPrevious() },
                     enabled = metadata != null,
-                    modifier = Modifier.size(secondarySize),
+                    modifier = Modifier.size(previousNextSize),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.skip_previous),
                         contentDescription = stringResource(R.string.car_previous),
-                        modifier = Modifier.size(viewport.pxToDp(40f, density)),
+                        modifier = Modifier.size((previousNextSize.value * 0.42f).dp),
                     )
                 }
-
-                Spacer(Modifier.width(viewport.pxToDp(24f, density)))
 
                 FilledIconButton(
                     onClick = { connection?.togglePlayPause() },
                     enabled = metadata != null,
-                    modifier = Modifier.size(primarySize),
+                    modifier = Modifier.size(playPauseSize),
                 ) {
                     Icon(
                         painter = painterResource(if (isPlaying) R.drawable.pause else R.drawable.play),
                         contentDescription = stringResource(R.string.car_play_pause),
-                        modifier = Modifier.size(viewport.pxToDp(48f, density)),
+                        modifier = Modifier.size((playPauseSize.value * 0.42f).dp),
                     )
                 }
-
-                Spacer(Modifier.width(viewport.pxToDp(24f, density)))
 
                 IconButton(
                     onClick = { connection?.seekToNext() },
                     enabled = metadata != null,
-                    modifier = Modifier.size(secondarySize),
+                    modifier = Modifier.size(previousNextSize),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.skip_next),
                         contentDescription = stringResource(R.string.car_next),
-                        modifier = Modifier.size(viewport.pxToDp(40f, density)),
+                        modifier = Modifier.size((previousNextSize.value * 0.42f).dp),
                     )
                 }
             }
 
-            Spacer(Modifier.height(viewport.pxToDp(18f, density)))
+            Spacer(Modifier.height(viewport.pxToDp(8f, density)))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement =
+                    Arrangement.spacedBy(viewport.pxToDp(18f, density)),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(
                     onClick = {
@@ -227,7 +217,7 @@ fun CarNowPlayingScreen(
                         }
                     },
                     enabled = metadata != null,
-                    modifier = Modifier.size(viewport.pxToDp(68f, density)),
+                    modifier = Modifier.size(secondaryActionSize),
                 ) {
                     Icon(
                         painter = painterResource(if (shuffleEnabled) R.drawable.shuffle_on else R.drawable.shuffle),
@@ -238,7 +228,7 @@ fun CarNowPlayingScreen(
                 IconButton(
                     onClick = { showQueue = true },
                     enabled = queue.isNotEmpty(),
-                    modifier = Modifier.size(viewport.pxToDp(68f, density)),
+                    modifier = Modifier.size(secondaryActionSize),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.queue_music),
@@ -259,7 +249,7 @@ fun CarNowPlayingScreen(
                         }
                     },
                     enabled = metadata != null,
-                    modifier = Modifier.size(viewport.pxToDp(68f, density)),
+                    modifier = Modifier.size(secondaryActionSize),
                 ) {
                     Icon(
                         painter =
@@ -273,6 +263,30 @@ fun CarNowPlayingScreen(
                         contentDescription = stringResource(R.string.car_repeat),
                     )
                 }
+            }
+        }
+
+        Box(
+            modifier =
+                Modifier
+                    .size(artworkSize)
+                    .clip(MaterialTheme.shapes.extraLarge),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (metadata?.thumbnailUrl != null) {
+                AsyncImage(
+                    model = metadata?.thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    painter = painterResource(R.drawable.music_note),
+                    contentDescription = null,
+                    modifier = Modifier.size((artworkSize.value * 0.34f).dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
