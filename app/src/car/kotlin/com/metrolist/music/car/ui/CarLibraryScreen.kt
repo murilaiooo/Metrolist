@@ -1,0 +1,340 @@
+package com.metrolist.music.car.ui
+
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.core.content.ContextCompat
+import com.metrolist.music.R
+import com.metrolist.music.car.library.AndroidCarLibraryTreeAccessFactory
+import com.metrolist.music.car.library.CarLibraryIndex
+import com.metrolist.music.car.library.CarLibraryOpenResult
+import com.metrolist.music.car.library.CarLibraryRefreshResult
+import com.metrolist.music.car.library.CarLibraryRepository
+import com.metrolist.music.car.library.ContentTreeCarLibraryTreeAccess
+import com.metrolist.music.car.library.SharedPreferencesCarLibraryLocationStore
+import com.metrolist.music.car.service.CarImportService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private sealed interface CarLibraryManagementState {
+    data object Loading : CarLibraryManagementState
+    data object Empty : CarLibraryManagementState
+
+    data class Active(
+        val index: CarLibraryIndex,
+        val message: String? = null,
+    ) : CarLibraryManagementState
+
+    data class Unavailable(
+        val message: String,
+    ) : CarLibraryManagementState
+
+    data class Invalid(
+        val errors: List<String>,
+    ) : CarLibraryManagementState
+}
+
+@Composable
+fun CarLibraryScreen(
+    viewport: CarViewportMetrics,
+) {
+    val context = LocalContext.current
+    val appContext = context.applicationContext
+    val density = LocalDensity.current.density
+    val scope = rememberCoroutineScope()
+    val repository =
+        remember(appContext) {
+            CarLibraryRepository(
+                locationStore = SharedPreferencesCarLibraryLocationStore(appContext),
+                accessFactory = AndroidCarLibraryTreeAccessFactory(appContext),
+            )
+        }
+
+    var state by remember { mutableStateOf<CarLibraryManagementState>(CarLibraryManagementState.Loading) }
+    var legacyImportMessage by remember { mutableStateOf<String?>(null) }
+
+    fun takeReadPermission(uri: Uri) {
+        runCatching {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
+    }
+
+    fun openTree(uri: Uri) {
+        takeReadPermission(uri)
+        state = CarLibraryManagementState.Loading
+        scope.launch {
+            state =
+                withContext(Dispatchers.IO) {
+                    repository.open(
+                        ContentTreeCarLibraryTreeAccess(
+                            resolver = appContext.contentResolver,
+                            treeUri = uri,
+                        ),
+                    ).toManagementState()
+                }
+        }
+    }
+
+    fun refreshLibrary() {
+        state = CarLibraryManagementState.Loading
+        scope.launch {
+            state =
+                withContext(Dispatchers.IO) {
+                    repository.refresh().toManagementState()
+                }
+        }
+    }
+
+    val openFolder =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            uri?.let(::openTree)
+        }
+
+    val importBackup =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                takeReadPermission(uri)
+                val intent =
+                    Intent(appContext, CarImportService::class.java).apply {
+                        action = CarImportService.ACTION_START
+                        data = uri
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                ContextCompat.startForegroundService(appContext, intent)
+                legacyImportMessage = context.getString(R.string.car_legacy_import_started)
+            }
+        }
+
+    LaunchedEffect(repository) {
+        state =
+            withContext(Dispatchers.IO) {
+                repository.reopen().toManagementState()
+            }
+    }
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .padding(viewport.pxToDp(36f, density)),
+        verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(18f, density)),
+    ) {
+        Text(
+            text = stringResource(R.string.car_library),
+            style = MaterialTheme.typography.headlineLarge,
+        )
+        Text(
+            text = stringResource(R.string.car_library_description),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = viewport.pxToDp(2f, density),
+        ) {
+            Column(
+                modifier = Modifier.padding(viewport.pxToDp(24f, density)),
+                verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(14f, density)),
+            ) {
+                when (val current = state) {
+                    CarLibraryManagementState.Loading -> {
+                        Text(
+                            text = stringResource(R.string.car_library_loading),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+
+                    CarLibraryManagementState.Empty -> {
+                        Text(
+                            text = stringResource(R.string.car_library_no_folder),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        Text(
+                            text = stringResource(R.string.car_library_no_folder_desc),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(
+                            onClick = { openFolder.launch(null) },
+                            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                        ) {
+                            Text(stringResource(R.string.car_library_open_folder))
+                        }
+                    }
+
+                    is CarLibraryManagementState.Active -> {
+                        Text(
+                            text = stringResource(R.string.car_library_active),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.car_library_summary,
+                                    current.index.songs.size,
+                                    current.index.playlists.size,
+                                ),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.car_library_revision,
+                                    current.index.revision.take(16),
+                                ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        current.message?.let {
+                            Text(
+                                text = it,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(viewport.pxToDp(12f, density)),
+                        ) {
+                            Button(
+                                onClick = ::refreshLibrary,
+                                modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                            ) {
+                                Text(stringResource(R.string.car_library_refresh))
+                            }
+                            OutlinedButton(
+                                onClick = { openFolder.launch(null) },
+                                modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                            ) {
+                                Text(stringResource(R.string.car_library_choose_another))
+                            }
+                        }
+                    }
+
+                    is CarLibraryManagementState.Unavailable -> {
+                        Text(
+                            text = stringResource(R.string.car_library_unavailable),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            text = current.message,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(
+                            onClick = { openFolder.launch(null) },
+                            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                        ) {
+                            Text(stringResource(R.string.car_library_reselect))
+                        }
+                    }
+
+                    is CarLibraryManagementState.Invalid -> {
+                        Text(
+                            text = stringResource(R.string.car_library_invalid),
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            text = current.errors.take(3).joinToString(" · "),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Button(
+                            onClick = { openFolder.launch(null) },
+                            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                        ) {
+                            Text(stringResource(R.string.car_library_reselect))
+                        }
+                    }
+                }
+            }
+        }
+
+        HorizontalDivider()
+
+        Text(
+            text = stringResource(R.string.car_legacy_backup),
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = stringResource(R.string.car_legacy_backup_desc),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedButton(
+            onClick = { importBackup.launch(arrayOf("*/*")) },
+            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(60f, density)),
+        ) {
+            Text(stringResource(R.string.car_import_legacy_backup))
+        }
+        legacyImportMessage?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.height(viewport.pxToDp(4f, density)))
+    }
+}
+
+private fun CarLibraryOpenResult.toManagementState(): CarLibraryManagementState =
+    when (this) {
+        is CarLibraryOpenResult.Opened ->
+            CarLibraryManagementState.Active(index)
+        is CarLibraryOpenResult.Unavailable ->
+            if (location == null) {
+                CarLibraryManagementState.Empty
+            } else {
+                CarLibraryManagementState.Unavailable(reason)
+            }
+        is CarLibraryOpenResult.Invalid ->
+            CarLibraryManagementState.Invalid(errors)
+    }
+
+private fun CarLibraryRefreshResult.toManagementState(): CarLibraryManagementState =
+    when (this) {
+        is CarLibraryRefreshResult.Unchanged ->
+            CarLibraryManagementState.Active(
+                index = index,
+                message = "Library is already up to date.",
+            )
+        is CarLibraryRefreshResult.Updated ->
+            CarLibraryManagementState.Active(
+                index = index,
+                message = "Library refreshed.",
+            )
+        is CarLibraryRefreshResult.Unavailable ->
+            CarLibraryManagementState.Unavailable(reason)
+        is CarLibraryRefreshResult.Invalid ->
+            CarLibraryManagementState.Invalid(errors)
+    }

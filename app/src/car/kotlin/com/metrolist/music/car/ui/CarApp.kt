@@ -113,8 +113,7 @@ private fun CarShell(
                         )
 
                     CarDestination.LIBRARY ->
-                        CarSectionPlaceholder(
-                            title = stringResource(R.string.car_library),
+                        CarLibraryScreen(
                             viewport = viewport,
                         )
 
