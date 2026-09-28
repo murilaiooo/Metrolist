@@ -73,31 +73,34 @@ private fun RunningOperation(progress: CarOperationProgress) {
         )
     }
 
-    val details = buildList {
-        if (progress.completedItems != null && progress.totalItems != null) {
-            add("\${progress.completedItems}/\${progress.totalItems} items")
-        }
-        if (progress.bytesProcessed != null) {
-            val bytes =
-                if (progress.totalBytes != null && progress.totalBytes > 0L) {
-                    "\${humanBytes(progress.bytesProcessed)} / \${humanBytes(progress.totalBytes)}"
-                } else {
-                    humanBytes(progress.bytesProcessed)
-                }
-            add(bytes)
-        }
-        fraction?.let { add("\${(it * 100f).toInt()}%") }
-        progress.bytesPerSecond?.takeIf { it > 0L }?.let {
-            add("\${humanBytes(it)}/s")
-        }
-    }
+    val details = formatCarOperationDetails(progress)
     if (details.isNotEmpty()) {
         Text(
-            details.joinToString(" · "),
+            details,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
+
+internal fun formatCarOperationDetails(progress: CarOperationProgress): String =
+    buildList {
+        if (progress.completedItems != null && progress.totalItems != null) {
+            add("${progress.completedItems}/${progress.totalItems} items")
+        }
+        if (progress.bytesProcessed != null) {
+            add(
+                if (progress.totalBytes != null && progress.totalBytes > 0L) {
+                    "${humanBytes(progress.bytesProcessed)} / ${humanBytes(progress.totalBytes)}"
+                } else {
+                    humanBytes(progress.bytesProcessed)
+                },
+            )
+        }
+        progress.fraction?.let { add("${(it * 100f).toInt()}%") }
+        progress.bytesPerSecond?.takeIf { it > 0L }?.let {
+            add("${humanBytes(it)}/s")
+        }
+    }.joinToString(" · ")
 
 private fun humanBytes(bytes: Long): String {
     val value = bytes.coerceAtLeast(0L).toDouble()
@@ -108,6 +111,6 @@ private fun humanBytes(bytes: Long): String {
         value >= gib -> String.format(Locale.US, "%.1f GB", value / gib)
         value >= mib -> String.format(Locale.US, "%.1f MB", value / mib)
         value >= kib -> String.format(Locale.US, "%.1f KB", value / kib)
-        else -> "\${value.toLong()} B"
+        else -> "${value.toLong()} B"
     }
 }
