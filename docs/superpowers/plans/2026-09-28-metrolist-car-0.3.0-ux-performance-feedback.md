@@ -46,6 +46,10 @@ New Car-only design/feedback units:
 - `app/src/car/kotlin/com/metrolist/music/car/ui/component/CarTrackRow.kt` — shared automotive track row.
 - `app/src/car/kotlin/com/metrolist/music/car/ui/player/CarNowPlayingLayout.kt` — pure layout metrics and hit-target policy.
 - `app/src/car/kotlin/com/metrolist/music/car/ui/player/CarArtworkSwipePolicy.kt` — pure swipe decision logic.
+- `app/src/car/kotlin/com/metrolist/music/car/preferences/CarDislikeLedger.kt` — versioned persistent dislike records and atomic storage.
+- `app/src/car/kotlin/com/metrolist/music/car/preferences/CarDislikeRepository.kt` — dislike/undo/export state and filtering contract.
+- `app/src/car/kotlin/com/metrolist/music/car/preferences/CarDislikeDeletionCoordinator.kt` — safe bulk deletion orchestration with partial-failure reporting.
+- `app/src/car/kotlin/com/metrolist/music/car/ui/CarDislikedScreen.kt` — system playlist/review UI for pending and deleted dislikes.
 
 New development-lab tooling:
 - `scripts/car/car-test-lab.ps1` — AVD start/configure/install/viewport/startup-measure helpers.
@@ -382,6 +386,110 @@ Existing files remain owners of existing behavior; this plan modifies them inste
 - [ ] **Step 7: Commit**
   `git add app/src/car app/src/testCar && git commit -m "feat(car): add artwork swipe navigation"`
 
+### Task 9A: Balance Now Playing controls and add numeric elapsed/total time
+
+**Files:**
+- Modify: `app/src/car/kotlin/com/metrolist/music/car/ui/player/CarNowPlayingScreen.kt`
+- Create: `app/src/testCar/kotlin/com/metrolist/music/car/ui/player/CarPlaybackTimeTest.kt`
+
+**Interfaces:**
+- Produces `formatCarPlaybackTime(positionMs: Long): String`.
+- Elapsed time renders to the left of the seek bar and total duration to the right.
+- Control groups remain inside the left content region but are visually centered within that region; they are not pinned to the extreme left edge.
+- Artwork remains the right-side anchor.
+- Like and Dislike slots are reserved in the secondary-control area for Task 9B.
+
+- [ ] **Step 1: Write RED playback-time tests**
+  Assert 0:00, minute/second, and hour/minute/second formatting; negative positions clamp to zero.
+
+- [ ] **Step 2: Run RED**
+  Run: `.\gradlew.bat --no-daemon --max-workers=1 :app:testCarDebugUnitTest --tests "*CarPlaybackTimeTest"`.
+  Expected: FAIL because formatter does not exist.
+
+- [ ] **Step 3: Implement formatter and time row**
+  Add elapsed/total numeric labels around the seek area. Keep them readable but subordinate to title/artist.
+
+- [ ] **Step 4: Re-center transport and secondary controls**
+  Center Previous/Play-Pause/Next and the secondary action row within the left content region while preserving the approved hit areas.
+
+- [ ] **Step 5: Run GREEN and AVD review**
+  Verify 800x480, 1024x600, 1280x720. Expected: no clipping, artwork remains right, control groups look balanced rather than left-pinned.
+
+- [ ] **Step 6: Commit**
+  `git add app/src/car app/src/testCar && git commit -m "feat(car): polish now playing timing and balance"`
+
+### Task 9B: Add Like/Dislike review workflow with durable Disliked playlist
+
+**Files:**
+- Create: `app/src/car/kotlin/com/metrolist/music/car/preferences/CarDislikeLedger.kt`
+- Create: `app/src/car/kotlin/com/metrolist/music/car/preferences/CarDislikeRepository.kt`
+- Create: `app/src/car/kotlin/com/metrolist/music/car/preferences/CarDislikeDeletionCoordinator.kt`
+- Create: `app/src/car/kotlin/com/metrolist/music/car/preferences/CarDislikeExporter.kt`
+- Create: `app/src/car/kotlin/com/metrolist/music/car/ui/CarDislikedScreen.kt`
+- Modify: `app/src/car/kotlin/com/metrolist/music/car/ui/player/CarNowPlayingScreen.kt`
+- Modify: `app/src/car/kotlin/com/metrolist/music/car/ui/CarApp.kt`
+- Modify: `app/src/car/kotlin/com/metrolist/music/car/ui/CarNavigation.kt` only if needed to expose Disliked without adding a sixth primary rail destination.
+- Modify: `app/src/car/kotlin/com/metrolist/music/car/library/CarUnifiedCatalog.kt`
+- Modify: `app/src/car/kotlin/com/metrolist/music/car/library/CarUnifiedPlaybackResolver.kt`
+- Modify: `app/src/car/kotlin/com/metrolist/music/car/importer/CarImportCoordinator.kt` to skip active disliked song IDs during restoration when safe.
+- Reuse: existing `PlayerConnection.toggleLike()`, existing download/cache removal paths, and Car import cleanup ports.
+- Create tests under `app/src/testCar/kotlin/com/metrolist/music/car/preferences/`.
+- Modify/add focused catalog, queue, import, and player tests.
+
+**Interfaces:**
+- `CarDislikeRecord(songId, title, artists, album, dislikedAt, sourceKinds, deletedAt, lastDeletionError)`.
+- `CarDislikeLedger(version, records)` stored atomically under Car app files.
+- `CarDislikeRepository.activeSongIds: StateFlow<Set<String>>`.
+- `dislike(snapshot)` is idempotent and persists before playback/queue mutation.
+- `undo(songId)` removes the active dislike; it does not restore a physically deleted file.
+- `markDeleted(songId)` preserves the record and sets `deletedAt`.
+- Disliked UI is a system playlist backed by the ledger, not only Room playlist membership.
+- Pending disliked items remain locally playable from Disliked for review.
+- Active disliked IDs are excluded from normal Music/Search/Library catalog/queue construction.
+- Main-player Like uses existing persistent Like behavior and green selected state.
+- Main-player Dislike uses red selected/action state.
+- If a pending disliked track is played from Disliked and Like is pressed, clear its active dislike and apply normal Like.
+- Export produces UTF-8 `Disliked.txt` (`Artist — Title`) and structured `Disliked.json`.
+- Bulk deletion acts only after explicit confirmation and never clears the preference history.
+
+- [ ] **Step 1: Write RED ledger durability/idempotency tests**
+  Assert dislike is persisted atomically, duplicate dislike updates one record rather than duplicating it, deleted records retain title/artist metadata, and reload reconstructs the same active/deleted state.
+
+- [ ] **Step 2: Write RED filter/queue tests**
+  Assert active disliked IDs disappear from normal unified catalog results and normal queues, but remain available to the Disliked review source.
+
+- [ ] **Step 3: Write RED player-action tests**
+  Assert Dislike persists before queue advancement, removes/skips the current item from the normal session, Like uses the existing positive state, and Like on a pending disliked review item rescues it by undoing the active dislike.
+
+- [ ] **Step 4: Write RED bulk-delete safety tests**
+  Assert no physical deletion occurs without confirmed action; per-item success marks `deletedAt`; one item failure does not clear other records; failed items remain pending with an error; already-deleted entries are not deleted twice.
+
+- [ ] **Step 5: Write RED import/re-entry tests**
+  Assert active disliked song IDs cannot reappear in normal unified catalog/queue after Car Library refresh and are skipped by legacy backup restoration where the importer can safely identify the song before writing payload data.
+
+- [ ] **Step 6: Implement ledger and repository**
+  Use a versioned atomic file. Persist snapshot metadata before any playback or storage mutation. Expose observable pending/deleted lists and active ID set.
+
+- [ ] **Step 7: Add green/red preference controls to Now Playing**
+  Add large but visually subordinate Like and Dislike controls. Dislike writes first, then advances playback. Like stays integrated with existing MetroList Like behavior.
+
+- [ ] **Step 8: Implement Disliked review playlist**
+  Expose it from an existing secondary surface such as More/Library rather than adding a sixth primary navigation rail item. Show artwork/title/artist, Pending/Deleted state, per-track Undo, playback for files that still exist, Export, and the bulk-delete action.
+
+- [ ] **Step 9: Implement confirmed bulk deletion**
+  Confirmation text includes the pending file count and states deletion cannot be automatically reversed. Reuse safe MetroList download/cache/artwork cleanup. Delete Car Library source files only when the persisted tree permission is writable and exact target resolution succeeds. Report partial failures explicitly.
+
+- [ ] **Step 10: Implement export**
+  Android CreateDocument/share flow writes both text and JSON without mutating the ledger. Deleted entries remain exportable while their dislike remains active.
+
+- [ ] **Step 11: Run GREEN and 2 GB AVD workflow**
+  Dislike several tracks, verify they immediately stop appearing in normal queue construction, play/review them from Disliked, Undo one, export the list, confirm/cancel bulk delete, then confirm deletion and verify history remains while local files are gone.
+
+- [ ] **Step 12: Full Car regression + commit**
+  Run `.\gradlew.bat --no-daemon --max-workers=1 :app:testCarDebugUnitTest :app:assembleCarDebug`.
+  Expected: BUILD SUCCESSFUL.
+  Commit: `git add app/src/car app/src/testCar && git commit -m "feat(car): add disliked review and safe bulk delete"`
+
 ### Task 10: Measure and optimize startup without weakening restoration
 
 **Files:**
@@ -448,10 +556,10 @@ Existing files remain owners of existing behavior; this plan modifies them inste
   Expected for each: BUILD SUCCESSFUL. Record any pre-existing failure by name; do not omit red tests.
 
 - [ ] **Step 2: Execute the AVD functional matrix at 1024x600**
-  Clean install; cold/warm start; system light mode while MetroList remains dark; all five destinations; play/pause/previous/next; seek; artwork swipe; Mini Player; queue; search; small legacy backup import; Car Library open/refresh; process kill/restart; offline playback.
+  Clean install; cold/warm start; system light mode while MetroList remains dark; all five destinations; play/pause/previous/next; seek with elapsed/total time; artwork swipe; green Like/red Dislike; Disliked review/Undo/export/confirmed bulk delete; Mini Player; queue; search; small legacy backup import; Car Library open/refresh; process kill/restart; offline playback.
 
 - [ ] **Step 3: Execute viewport matrix**
-  Repeat primary visual/touch probes at 800x480 and 1280x720. Capture screenshots of Now Playing, Music, Library, Search, More, Mini Player, import progress, and at least one error state.
+  Repeat primary visual/touch probes at 800x480 and 1280x720. Capture screenshots of Now Playing with time/Like/Dislike controls, Music, Library, Search, More, Disliked review, Mini Player, import progress, confirmation dialog, and at least one error/partial-failure state.
 
 - [ ] **Step 4: Execute large-backup acceptance**
   Prefer the user’s real ~4 GB / 300+ track `.metrolistbackup` if available. Otherwise use a representative synthetic/streamed fixture that keeps validation active long enough to prove PREPARING/VALIDATING progress, bytes/indeterminate behavior, throughput, IMPORTING counts, FINALIZING, completion, and stable memory/I/O. Record exact fixture size and song count.
@@ -478,7 +586,9 @@ Existing files remain owners of existing behavior; this plan modifies them inste
 
 Tasks 1-5 establish the reliable foundation: reproducible lab, dark shell, unified progress, observable legacy import, and observable Car Library behavior.
 
-Tasks 6-9 deliver the automotive visual/interaction redesign: shared rows, Mini Player, driver-side Now Playing, and swipe artwork.
+Tasks 6-9 deliver the automotive visual/interaction redesign: shared rows, Mini Player, balanced Now Playing, and swipe artwork.
+
+Task 9A finishes the Now Playing polish with numeric elapsed/total time. Task 9B adds the durable Disliked review workflow, safe confirmed bulk deletion, and exportable negative-preference history.
 
 Task 10 is intentionally late enough to measure the real redesigned UI but still before release packaging. Optimization is evidence-driven, not speculative.
 
@@ -493,6 +603,12 @@ The implementation is complete only when:
 - MetroList remains dark with Android set to light;
 - controls are left/driver-side and artwork is right-side;
 - artwork swipe behavior passes threshold/direction tests and manual probe;
+- elapsed and total track time are visible numerically on Now Playing;
+- main-player Like is green and uses existing persistent Like behavior;
+- Dislike persists to the durable Disliked ledger before playback advances;
+- active disliked IDs are filtered from normal catalog/queue construction;
+- Disliked remains reviewable, supports Undo and export, and retains history after deletion;
+- bulk delete requires confirmation and safely reports partial failures;
 - import feedback starts during validation, not after it;
 - the small backup and large-backup acceptance both produce observable progress;
 - Car Library remains direct-play and recoverable;

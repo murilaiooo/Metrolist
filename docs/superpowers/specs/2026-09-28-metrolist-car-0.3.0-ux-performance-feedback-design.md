@@ -149,11 +149,19 @@ Exact rendered dp values are produced through the Car viewport abstraction rathe
 Primary control order remains:
 Previous, Play/Pause, Next.
 
-Secondary actions may include:
+The control cluster is centered within the left content region rather than visually pinned to the extreme left edge. Driver reach is achieved primarily by keeping artwork on the right and keeping transport controls in the left content region.
+
+The seek area must show numeric time:
+- elapsed playback time on the left;
+- total track duration on the right;
+- hours are included only for tracks >= 60 minutes.
+
+Secondary actions include:
 - shuffle;
 - queue;
 - repeat;
-- favorite/library action where currently supported.
+- Like;
+- Dislike.
 
 Secondary actions must not visually compete with transport controls.
 
@@ -182,6 +190,92 @@ Acceptance behavior:
 - RTL behavior must remain logically correct.
 
 Track changes must call the existing player navigation path and preserve queue semantics.
+
+## 9A. Like, Dislike, and review workflow
+
+Now Playing includes two explicit preference actions:
+- Like uses a green positive-state treatment;
+- Dislike uses a red negative-state treatment.
+
+Like should reuse the existing MetroList persistent song-like behavior rather than introducing a second positive-rating system.
+
+Dislike is intentionally safer than immediate deletion.
+
+When the user presses Dislike:
+1. persist the negative preference record first;
+2. add/update the song in the Car system playlist named `Disliked`;
+3. remove the item from the current normal playback queue and advance to the next available track;
+4. exclude that song ID from normal Music/Search/Library queues while the dislike remains active;
+5. keep the local audio and artwork intact until explicit review/deletion.
+
+A disliked song remains playable from the Disliked review playlist so the user can verify accidental or uncertain dislikes before deleting anything.
+
+### Dislike ledger
+
+The Disliked playlist is backed by a versioned Car-specific persistent ledger, not only by ordinary playlist membership.
+
+Each active dislike record preserves at least:
+- stable song ID;
+- title;
+- artist names;
+- album when known;
+- disliked timestamp;
+- source/provenance kinds when known;
+- deletion state/timestamp;
+- latest deletion error when a delete attempt fails.
+
+The ledger is written atomically. A successful physical deletion must never erase the dislike record.
+
+This separation is required because the preference history must survive after the local audio, Room song bundle, cache resource, artwork, or source file has been removed.
+
+### Review actions
+
+The Disliked screen provides:
+- playback for still-present pending files;
+- per-track Undo Dislike;
+- pending/deleted state;
+- a bulk `Delete all disliked files` action;
+- export/share of the dislike history.
+
+Undo Dislike removes the active negative preference and makes a still-present file eligible for normal catalog/queue visibility again. Undo does not recreate a file that was already physically deleted.
+
+If a pending disliked track is played from Disliked and the user presses Like, the app treats that as an explicit rescue: clear the active dislike and apply the normal Like state.
+
+### Bulk delete
+
+`Delete all disliked files` requires an explicit confirmation dialog that includes the number of pending files and states that local audio deletion cannot be automatically reversed.
+
+Bulk deletion:
+- applies only to active disliked entries whose local media still exists;
+- attempts deletion item by item;
+- removes MetroList-managed download/cache/artwork/metadata layers through existing safe deletion paths;
+- may delete a Car Library source file only when the persisted tree permission is writable and the exact file can be resolved safely;
+- never treats one item failure as permission to clear the whole ledger;
+- marks an entry deleted only after its media deletion succeeds;
+- keeps failed items pending and exposes their error;
+- preserves every still-active dislike record for later export.
+
+Deleted entries remain in Disliked as lightweight history, marked Deleted, because the user wants to export negative preferences to ChatGPT later.
+
+### Re-entry prevention
+
+An active disliked song ID must not silently re-enter normal playback:
+- unified catalog output filters active disliked IDs;
+- normal queue builders filter active disliked IDs;
+- legacy backup import skips restoration of actively disliked song IDs when practical, avoiding wasted storage;
+- Car Library refresh may still observe the source manifest/file, but normal catalog/queue visibility remains blocked by the ledger.
+
+The app does not attempt semantic similarity filtering itself. Similar-song avoidance is an external curation use case supported by exporting the dislike history.
+
+### Export
+
+The Disliked screen provides an Android share/create-document export suitable for ChatGPT review.
+
+At minimum export:
+- a human-readable UTF-8 text file with `Artist — Title` per line;
+- a structured JSON file containing song IDs, metadata, dislike timestamp, and deletion state.
+
+Exporting never removes or changes the ledger.
 
 ## 10. Mini player
 
@@ -435,6 +529,15 @@ Required focused tests include:
 - artwork swipe right invokes Previous;
 - sub-threshold swipe changes nothing;
 - unavailable previous/next does not change track;
+- elapsed/total playback time formatting is correct;
+- Like uses existing persistent positive state;
+- Dislike persists before playback advances;
+- duplicate Dislike is idempotent;
+- active disliked IDs are filtered from normal catalog and queue construction;
+- Disliked review playback remains available before deletion;
+- Undo restores normal eligibility when the file still exists;
+- bulk delete requires confirmation, preserves dislike history, and tolerates partial failure;
+- dislike export preserves human-readable and structured history;
 - large touch targets satisfy Car sizing rules;
 - legacy validation emits progress before import begins;
 - import progress exposes bytes, percent, stage, and item counts;
@@ -455,8 +558,10 @@ Before a build is handed to the user for physical testing, run on the Car AVD:
 - Android light mode with MetroList still dark;
 - navigate all five destinations;
 - play/pause/previous/next;
-- seek;
+- seek plus elapsed/total numeric time;
 - artwork swipe;
+- Like and Dislike controls;
+- Disliked review, Undo, export, confirmed bulk delete, and partial-failure behavior;
 - Mini Player controls;
 - queue;
 - search;
