@@ -96,6 +96,17 @@
     <string name="car_player_starting">Player is still starting. Try again in a moment.</string>
     <string name="car_library_track_unavailable">This track is unavailable in the selected Car Library.</string>
     <string name="car_library_skipped_tracks">%1$d unavailable tracks were skipped.</string>
+    <string name="car_downloads_empty">No legacy imported or downloaded tracks yet.</string>
+    <string name="car_downloads_count">%1$d downloaded tracks</string>
+    <string name="car_search_local_desc">Searches the active Car Library stored on this head unit. Works offline.</string>
+    <string name="car_search_hint">Song, artist, or album</string>
+    <string name="car_search_no_library">Select a Car Library folder in Library before using local search.</string>
+    <string name="car_search_no_results">No matching local tracks.</string>
+    <string name="car_import_status">Windows backup compatibility</string>
+    <string name="car_import_resume">Resume</string>
+    <string name="car_import_discard">Discard</string>
+    <string name="car_diagnostics">Input &amp; system diagnostics</string>
+    <string name="car_diagnostics_desc">Use this screen on the head unit to verify real panel and steering-wheel key codes. Volume remains system controlled.</string>
     <string name="car_queue">Queue</string>
     <string name="car_no_music">No music selected</string>
     <string name="car_previous">Previous track</string>

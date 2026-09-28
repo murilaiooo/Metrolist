@@ -29,8 +29,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
+import com.metrolist.music.car.importer.CarImportRepository
+import com.metrolist.music.car.input.CarInputDiagnostics
 import com.metrolist.music.car.ui.player.CarMiniPlayer
 import com.metrolist.music.car.ui.player.CarNowPlayingScreen
+import com.metrolist.music.db.MusicDatabase
+import com.metrolist.music.playback.DownloadUtil
 import com.metrolist.music.playback.PlayerConnection
 import com.metrolist.music.ui.theme.MetrolistTheme
 import kotlinx.coroutines.flow.StateFlow
@@ -40,6 +44,10 @@ import kotlinx.coroutines.flow.first
 @Composable
 fun CarApp(
     connectionFlow: StateFlow<PlayerConnection?>,
+    database: MusicDatabase,
+    downloadUtil: DownloadUtil,
+    importRepository: CarImportRepository,
+    inputDiagnostics: CarInputDiagnostics,
 ) {
     val connection by connectionFlow.collectAsStateWithLifecycle()
     var viewport by remember { mutableStateOf(CarViewportMetrics.from(1280, 720)) }
@@ -57,6 +65,10 @@ fun CarApp(
             CarShell(
                 connection = connection,
                 viewport = viewport,
+                database = database,
+                downloadUtil = downloadUtil,
+                importRepository = importRepository,
+                inputDiagnostics = inputDiagnostics,
             )
         }
     }
@@ -66,6 +78,10 @@ fun CarApp(
 private fun CarShell(
     connection: PlayerConnection?,
     viewport: CarViewportMetrics,
+    database: MusicDatabase,
+    downloadUtil: DownloadUtil,
+    importRepository: CarImportRepository,
+    inputDiagnostics: CarInputDiagnostics,
 ) {
     val density = LocalDensity.current.density
     val navigation = remember { CarNavigationState(CarDestination.DOWNLOADS) }
@@ -107,9 +123,13 @@ private fun CarShell(
                         )
 
                     CarDestination.DOWNLOADS ->
-                        CarSectionPlaceholder(
-                            title = stringResource(R.string.car_downloads),
+                        CarDownloadsScreen(
+                            database = database,
+                            connection = connection,
                             viewport = viewport,
+                            onOpenNowPlaying = {
+                                navigation.navigate(CarDestination.NOW_PLAYING)
+                            },
                         )
 
                     CarDestination.LIBRARY ->
@@ -122,14 +142,20 @@ private fun CarShell(
                         )
 
                     CarDestination.SEARCH ->
-                        CarSectionPlaceholder(
-                            title = stringResource(R.string.car_search),
+                        CarSearchScreen(
+                            connection = connection,
                             viewport = viewport,
+                            onOpenNowPlaying = {
+                                navigation.navigate(CarDestination.NOW_PLAYING)
+                            },
                         )
 
                     CarDestination.MORE ->
-                        CarSectionPlaceholder(
-                            title = stringResource(R.string.car_more),
+                        CarMoreScreen(
+                            database = database,
+                            downloadUtil = downloadUtil,
+                            importRepository = importRepository,
+                            inputDiagnostics = inputDiagnostics,
                             viewport = viewport,
                         )
                 }

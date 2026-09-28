@@ -10,9 +10,11 @@ import com.metrolist.music.car.input.CarInputDiagnostics
 import com.metrolist.music.car.input.CarInputRouter
 import com.metrolist.music.car.input.CarKeySignature
 import com.metrolist.music.car.input.CarMediaAction
+import com.metrolist.music.car.importer.CarImportRepository
 import com.metrolist.music.car.ui.CarApp
 import com.metrolist.music.car.ui.CarPlayerConnectionHost
 import com.metrolist.music.db.MusicDatabase
+import com.metrolist.music.playback.DownloadUtil
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
@@ -20,6 +22,12 @@ import javax.inject.Inject
 class CarMainActivity : ComponentActivity() {
     @Inject
     lateinit var database: MusicDatabase
+
+    @Inject
+    lateinit var downloadUtil: DownloadUtil
+
+    @Inject
+    lateinit var importRepository: CarImportRepository
 
     private lateinit var playerHost: CarPlayerConnectionHost
     private val inputRouter = CarInputRouter()
@@ -36,7 +44,13 @@ class CarMainActivity : ComponentActivity() {
             )
 
         setContent {
-            CarApp(connectionFlow = playerHost.connection)
+            CarApp(
+                connectionFlow = playerHost.connection,
+                database = database,
+                downloadUtil = downloadUtil,
+                importRepository = importRepository,
+                inputDiagnostics = inputDiagnostics,
+            )
         }
     }
 
