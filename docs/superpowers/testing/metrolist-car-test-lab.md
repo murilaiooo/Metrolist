@@ -16,21 +16,21 @@ The AVD is the primary iteration environment for MetroList Car. The physical hea
 
 `emulator -accel-check` reports WHPX 10.0.26200 installed and usable.
 
-## Parity profile
+## Primary acceptance profile
 
 Current AVD configuration:
 - landscape;
 - 1024x600 default viewport;
 - 160 dpi;
 - 4 virtual CPU cores;
-- `hw.ramSize=6G`;
+- `hw.ramSize=2G`;
 - `disk.dataPartition.size=24G`;
-- Android reports approximately 6 GB RAM;
+- Android reports approximately 2 GB RAM;
 - Android reports approximately 23 GB usable `/data` capacity.
 
-The AVD was expanded from the initial 2 GB RAM / 10 GB data profile without using `-wipe-data`.
+The user explicitly chose 2 GB RAM as the primary performance and stability gate. This is intentionally stricter than the physical head unit's memory profile. A 6 GB run may be used only as a secondary parity comparison when diagnosing memory-sensitive behavior.
 
-For low-memory resilience, a temporary 2 GB stress run may set `hw.ramSize=2G` while the AVD is stopped, then restore `6G`. Do not wipe or delete the AVD.
+Do not wipe or delete the AVD.
 
 ## MetroList Car 0.2.0 baseline
 
@@ -57,6 +57,16 @@ Official reproducible 0.2.0 baseline after applying the 6 GB / 24 GB parity prof
 - hot median: **60 ms**.
 
 These are emulator engineering baselines only. The physical head unit remains a separate performance target.
+
+### 2 GB primary-profile baseline
+
+After switching the same AVD to 2 GB RAM while retaining the 24 GB data partition:
+- cold TotalTime: 2830 ms, 2329 ms, 2103 ms;
+- cold median: **2329 ms**;
+- hot TotalTime: 82 ms, 54 ms, 58 ms;
+- hot median: **58 ms**.
+
+Car 0.2.0 remained installable and launchable under this profile.
 
 ## Script
 

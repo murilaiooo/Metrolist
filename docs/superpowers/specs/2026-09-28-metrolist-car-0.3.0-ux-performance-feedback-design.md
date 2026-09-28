@@ -58,9 +58,9 @@ The development lab becomes a first-class acceptance environment:
 - reference test viewport: 1024x600;
 - reference density: 160 dpi;
 - WHPX hardware acceleration;
-- parity memory profile: approximately 6 GB RAM;
+- primary acceptance memory profile: approximately 2 GB RAM;
 - data partition: at least 24 GB so a multi-gigabyte source archive and imported payload can coexist during testing;
-- optional 2 GB RAM stress profile for low-memory resilience;
+- optional 6 GB RAM comparison profile when diagnosing memory-sensitive behavior;
 - ADB-driven installation, startup timing, screenshots, input, and file transfer.
 
 Additional viewport presets must cover at least:

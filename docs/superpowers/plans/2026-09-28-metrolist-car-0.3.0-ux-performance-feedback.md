@@ -18,7 +18,7 @@
 - Primary controls remain Previous, Play/Pause, Next; no in-app volume control.
 - Artwork swipe: left = Next, right = Previous; slow commit threshold is approximately 18-20% of artwork width.
 - Reference visual canvas is 1024x600 at 160 dpi; acceptance also covers 800x480 and 1280x720.
-- Development AVD remains Android 10/API 29 with WHPX; parity profile is approximately 6 GB RAM and at least 24 GB data storage, with an optional 2 GB stress profile.
+- Development AVD remains Android 10/API 29 with WHPX; the primary acceptance profile is approximately 2 GB RAM and at least 24 GB data storage. A 6 GB run is optional only for parity comparison.
 - Development-lab startup targets: cold start to first meaningful Car frame <= 1.5 s; warm start < 0.8 s.
 - Any perceptibly long operation must provide immediate, continuous, explicit Running/Success/Error feedback.
 - Validation safety remains intact: legacy backup validation completes before destructive/committed library mutation.
@@ -70,8 +70,8 @@ Existing files remain owners of existing behavior; this plan modifies them inste
 - [ ] **Step 2: Write the test-lab script with explicit guardrails**
   The script must refuse unknown actions, target only `MetroList_Car_API29`, and never delete/wipe an AVD or user directory. `set-viewport` accepts only `800x480`, `1024x600`, or `1280x720`.
 
-- [ ] **Step 3: Configure the parity AVD profile**
-  Set approximately 6 GB RAM and at least 24 GB data storage in the AVD config. Document a non-destructive 2 GB RAM stress variant/profile without replacing the parity default.
+- [ ] **Step 3: Configure the primary 2 GB AVD profile**
+  Set approximately 2 GB RAM and at least 24 GB data storage in the AVD config. Document 6 GB only as an optional non-destructive parity comparison profile.
 
 - [ ] **Step 4: Verify every harness action**
   Run `start`, `set-viewport 1024x600`, `install 'D:\ESTE COMPUTADOR\Desktop\MetroList-Car-0.2.0-FINAL-TEST.apk'`, `measure-startup`, and `screenshot`. Expected: device remains online, size is correct, APK launches, timing is printed, screenshot is created.
@@ -419,7 +419,7 @@ Existing files remain owners of existing behavior; this plan modifies them inste
   Every behavior change made in Step 5 gets a failing test first, then implementation.
 
 - [ ] **Step 7: Re-run measurements**
-  Target <=1.5 s cold and <0.8 s warm on the parity AVD. If a target is not reached, record the measured bottleneck and do not claim the gate passed.
+  Target <=1.5 s cold and <0.8 s warm on the primary 2 GB AVD. If a target is not reached, record the measured bottleneck and do not claim the gate passed.
 
 - [ ] **Step 8: Run full Car tests**
   Run: `.\gradlew.bat :app:testCarDebugUnitTest :app:assembleCarDebug`
