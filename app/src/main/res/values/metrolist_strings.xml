@@ -90,6 +90,12 @@
     <string name="car_legacy_backup_desc">Older .metrolistbackup files are still supported as a secondary compatibility path.</string>
     <string name="car_import_legacy_backup">Import Windows Backup</string>
     <string name="car_legacy_import_started">Legacy backup import started. Progress is shown in the system notification.</string>
+    <string name="car_library_playlists">Playlists</string>
+    <string name="car_library_tracks">Tracks</string>
+    <string name="car_library_track_count">%1$d tracks</string>
+    <string name="car_player_starting">Player is still starting. Try again in a moment.</string>
+    <string name="car_library_track_unavailable">This track is unavailable in the selected Car Library.</string>
+    <string name="car_library_skipped_tracks">%1$d unavailable tracks were skipped.</string>
     <string name="car_queue">Queue</string>
     <string name="car_no_music">No music selected</string>
     <string name="car_previous">Previous track</string>

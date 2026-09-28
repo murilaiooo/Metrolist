@@ -115,6 +115,10 @@ private fun CarShell(
                     CarDestination.LIBRARY ->
                         CarLibraryScreen(
                             viewport = viewport,
+                            connection = connection,
+                            onOpenNowPlaying = {
+                                navigation.navigate(CarDestination.NOW_PLAYING)
+                            },
                         )
 
                     CarDestination.SEARCH ->

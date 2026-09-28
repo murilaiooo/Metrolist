@@ -4,15 +4,17 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
@@ -35,12 +37,15 @@ import androidx.core.content.ContextCompat
 import com.metrolist.music.R
 import com.metrolist.music.car.library.AndroidCarLibraryTreeAccessFactory
 import com.metrolist.music.car.library.CarLibraryIndex
+import com.metrolist.music.car.library.CarLibraryMediaResolver
 import com.metrolist.music.car.library.CarLibraryOpenResult
+import com.metrolist.music.car.library.CarLibraryQueueResolution
 import com.metrolist.music.car.library.CarLibraryRefreshResult
 import com.metrolist.music.car.library.CarLibraryRepository
 import com.metrolist.music.car.library.ContentTreeCarLibraryTreeAccess
 import com.metrolist.music.car.library.SharedPreferencesCarLibraryLocationStore
 import com.metrolist.music.car.service.CarImportService
+import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +71,8 @@ private sealed interface CarLibraryManagementState {
 @Composable
 fun CarLibraryScreen(
     viewport: CarViewportMetrics,
+    connection: PlayerConnection?,
+    onOpenNowPlaying: () -> Unit,
 ) {
     val context = LocalContext.current
     val appContext = context.applicationContext
@@ -78,9 +85,13 @@ fun CarLibraryScreen(
                 accessFactory = AndroidCarLibraryTreeAccessFactory(appContext),
             )
         }
+    val mediaResolver = remember(repository) { CarLibraryMediaResolver(repository) }
 
-    var state by remember { mutableStateOf<CarLibraryManagementState>(CarLibraryManagementState.Loading) }
+    var state by remember {
+        mutableStateOf<CarLibraryManagementState>(CarLibraryManagementState.Loading)
+    }
     var legacyImportMessage by remember { mutableStateOf<String?>(null) }
+    var playbackMessage by remember { mutableStateOf<String?>(null) }
 
     fun takeReadPermission(uri: Uri) {
         runCatching {
@@ -117,6 +128,46 @@ fun CarLibraryScreen(
         }
     }
 
+    fun playLocalQueue(
+        songIds: List<String>,
+        startIndex: Int,
+        title: String?,
+    ) {
+        val playerConnection = connection
+        if (playerConnection == null) {
+            playbackMessage = context.getString(R.string.car_player_starting)
+            return
+        }
+
+        when (
+            val resolution =
+                mediaResolver.resolveQueue(
+                    songIds = songIds,
+                    startIndex = startIndex,
+                    title = title,
+                )
+        ) {
+            is CarLibraryQueueResolution.Ready -> {
+                playerConnection.playQueue(resolution.queue)
+                playbackMessage =
+                    if (resolution.skippedSongIds.isEmpty()) {
+                        null
+                    } else {
+                        context.getString(
+                            R.string.car_library_skipped_tracks,
+                            resolution.skippedSongIds.size,
+                        )
+                    }
+                onOpenNowPlaying()
+            }
+
+            is CarLibraryQueueResolution.Unavailable -> {
+                playbackMessage =
+                    context.getString(R.string.car_library_track_unavailable)
+            }
+        }
+    }
+
     val openFolder =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             uri?.let(::openTree)
@@ -133,7 +184,8 @@ fun CarLibraryScreen(
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                 ContextCompat.startForegroundService(appContext, intent)
-                legacyImportMessage = context.getString(R.string.car_legacy_import_started)
+                legacyImportMessage =
+                    context.getString(R.string.car_legacy_import_started)
             }
         }
 
@@ -148,8 +200,8 @@ fun CarLibraryScreen(
         modifier =
             Modifier
                 .fillMaxSize()
-                .padding(viewport.pxToDp(36f, density)),
-        verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(18f, density)),
+                .padding(viewport.pxToDp(32f, density)),
+        verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(14f, density)),
     ) {
         Text(
             text = stringResource(R.string.car_library),
@@ -167,8 +219,9 @@ fun CarLibraryScreen(
             tonalElevation = viewport.pxToDp(2f, density),
         ) {
             Column(
-                modifier = Modifier.padding(viewport.pxToDp(24f, density)),
-                verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(14f, density)),
+                modifier = Modifier.padding(viewport.pxToDp(20f, density)),
+                verticalArrangement =
+                    Arrangement.spacedBy(viewport.pxToDp(12f, density)),
             ) {
                 when (val current = state) {
                     CarLibraryManagementState.Loading -> {
@@ -190,7 +243,10 @@ fun CarLibraryScreen(
                         )
                         Button(
                             onClick = { openFolder.launch(null) },
-                            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                            modifier =
+                                Modifier.sizeIn(
+                                    minHeight = viewport.pxToDp(64f, density),
+                                ),
                         ) {
                             Text(stringResource(R.string.car_library_open_folder))
                         }
@@ -225,19 +281,30 @@ fun CarLibraryScreen(
                             )
                         }
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(viewport.pxToDp(12f, density)),
+                            horizontalArrangement =
+                                Arrangement.spacedBy(viewport.pxToDp(12f, density)),
                         ) {
                             Button(
                                 onClick = ::refreshLibrary,
-                                modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                                modifier =
+                                    Modifier.sizeIn(
+                                        minHeight = viewport.pxToDp(60f, density),
+                                    ),
                             ) {
                                 Text(stringResource(R.string.car_library_refresh))
                             }
                             OutlinedButton(
                                 onClick = { openFolder.launch(null) },
-                                modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                                modifier =
+                                    Modifier.sizeIn(
+                                        minHeight = viewport.pxToDp(60f, density),
+                                    ),
                             ) {
-                                Text(stringResource(R.string.car_library_choose_another))
+                                Text(
+                                    stringResource(
+                                        R.string.car_library_choose_another,
+                                    ),
+                                )
                             }
                         }
                     }
@@ -254,7 +321,10 @@ fun CarLibraryScreen(
                         )
                         Button(
                             onClick = { openFolder.launch(null) },
-                            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                            modifier =
+                                Modifier.sizeIn(
+                                    minHeight = viewport.pxToDp(64f, density),
+                                ),
                         ) {
                             Text(stringResource(R.string.car_library_reselect))
                         }
@@ -272,9 +342,161 @@ fun CarLibraryScreen(
                         )
                         Button(
                             onClick = { openFolder.launch(null) },
-                            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(64f, density)),
+                            modifier =
+                                Modifier.sizeIn(
+                                    minHeight = viewport.pxToDp(64f, density),
+                                ),
                         ) {
                             Text(stringResource(R.string.car_library_reselect))
+                        }
+                    }
+                }
+            }
+        }
+
+        (state as? CarLibraryManagementState.Active)?.let { active ->
+            playbackMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            val allSongIds = active.index.songs.map { it.id }
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement =
+                    Arrangement.spacedBy(viewport.pxToDp(8f, density)),
+            ) {
+                if (active.index.playlists.isNotEmpty()) {
+                    item(key = "playlist-heading") {
+                        Text(
+                            text = stringResource(R.string.car_library_playlists),
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    }
+                    items(
+                        items = active.index.playlists,
+                        key = { playlist -> "playlist:" + playlist.id },
+                    ) { playlist ->
+                        Surface(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = connection != null) {
+                                        playLocalQueue(
+                                            songIds = playlist.songIds,
+                                            startIndex = 0,
+                                            title = playlist.name,
+                                        )
+                                    },
+                            shape = MaterialTheme.shapes.large,
+                            tonalElevation = viewport.pxToDp(1f, density),
+                        ) {
+                            Column(
+                                modifier =
+                                    Modifier.padding(
+                                        viewport.pxToDp(16f, density),
+                                    ),
+                            ) {
+                                Text(
+                                    text = playlist.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                                Text(
+                                    text =
+                                        stringResource(
+                                            R.string.car_library_track_count,
+                                            playlist.songIds.size,
+                                        ),
+                                    color =
+                                        MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                item(key = "track-heading") {
+                    Text(
+                        text = stringResource(R.string.car_library_tracks),
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier =
+                            Modifier.padding(
+                                top = viewport.pxToDp(6f, density),
+                            ),
+                    )
+                }
+
+                itemsIndexed(
+                    items = active.index.songs,
+                    key = { _, song -> "song:" + song.id },
+                ) { index, song ->
+                    Surface(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = connection != null) {
+                                    playLocalQueue(
+                                        songIds = allSongIds,
+                                        startIndex = index,
+                                        title =
+                                            context.getString(
+                                                R.string.car_library,
+                                            ),
+                                    )
+                                },
+                        shape = MaterialTheme.shapes.large,
+                        tonalElevation = viewport.pxToDp(1f, density),
+                    ) {
+                        Row(
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        horizontal =
+                                            viewport.pxToDp(16f, density),
+                                        vertical =
+                                            viewport.pxToDp(14f, density),
+                                    ),
+                            horizontalArrangement =
+                                Arrangement.spacedBy(
+                                    viewport.pxToDp(12f, density),
+                                ),
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = song.title,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    maxLines = 1,
+                                )
+                                val artist =
+                                    song.artists
+                                        .joinToString(", ") { artist ->
+                                            artist.name
+                                        }
+                                        .ifBlank {
+                                            song.album?.name.orEmpty()
+                                        }
+                                if (artist.isNotBlank()) {
+                                    Text(
+                                        text = artist,
+                                        color =
+                                            MaterialTheme.colorScheme
+                                                .onSurfaceVariant,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                            if (song.explicit) {
+                                Text(
+                                    text = "E",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color =
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                 }
@@ -293,7 +515,10 @@ fun CarLibraryScreen(
         )
         OutlinedButton(
             onClick = { importBackup.launch(arrayOf("*/*")) },
-            modifier = Modifier.sizeIn(minHeight = viewport.pxToDp(60f, density)),
+            modifier =
+                Modifier.sizeIn(
+                    minHeight = viewport.pxToDp(60f, density),
+                ),
         ) {
             Text(stringResource(R.string.car_import_legacy_backup))
         }
@@ -303,7 +528,6 @@ fun CarLibraryScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        Spacer(Modifier.height(viewport.pxToDp(4f, density)))
     }
 }
 
