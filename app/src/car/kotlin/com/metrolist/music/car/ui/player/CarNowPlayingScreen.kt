@@ -2,7 +2,10 @@ package com.metrolist.music.car.ui.player
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -29,19 +33,25 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
@@ -51,6 +61,9 @@ import com.metrolist.music.R
 import com.metrolist.music.car.ui.CarViewportMetrics
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 @Composable
 fun CarNowPlayingScreen(
@@ -58,6 +71,11 @@ fun CarNowPlayingScreen(
     viewport: CarViewportMetrics,
 ) {
     val density = LocalDensity.current.density
+    val layoutDirection = LocalLayoutDirection.current
+    val gestureScope = rememberCoroutineScope()
+    val artworkOffset = remember { Animatable(0f) }
+    var artworkDragStartMs by remember { mutableLongStateOf(0L) }
+    var artworkDragDistance by remember { mutableFloatStateOf(0f) }
     val metadata by
         connection?.mediaMetadata?.collectAsStateWithLifecycle()
             ?: remember { mutableStateOf(null) }
@@ -157,12 +175,32 @@ fun CarNowPlayingScreen(
                 modifier = Modifier.fillMaxWidth(),
             )
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = formatCarPlaybackTime(positionMs),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = formatCarPlaybackTime(durationMs),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
             Spacer(Modifier.height(viewport.pxToDp(8f, density)))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement =
-                    Arrangement.spacedBy(viewport.pxToDp(16f, density)),
+                    Arrangement.spacedBy(
+                        viewport.pxToDp(16f, density),
+                        Alignment.CenterHorizontally,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(
@@ -207,7 +245,10 @@ fun CarNowPlayingScreen(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement =
-                    Arrangement.spacedBy(viewport.pxToDp(18f, density)),
+                    Arrangement.spacedBy(
+                        viewport.pxToDp(18f, density),
+                        Alignment.CenterHorizontally,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(
@@ -270,6 +311,99 @@ fun CarNowPlayingScreen(
             modifier =
                 Modifier
                     .size(artworkSize)
+                    .offset { IntOffset(artworkOffset.value.roundToInt(), 0) }
+                    .pointerInput(connection, layout.artworkSizePx, layoutDirection) {
+                        detectHorizontalDragGestures(
+                            onDragStart = {
+                                artworkDragStartMs = System.currentTimeMillis()
+                                artworkDragDistance = 0f
+                                gestureScope.launch { artworkOffset.stop() }
+                            },
+                            onDragCancel = {
+                                gestureScope.launch {
+                                    artworkOffset.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = tween(durationMillis = 170),
+                                    )
+                                }
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                artworkDragDistance += abs(dragAmount)
+
+                                val currentOffset = artworkOffset.value
+                                val proposedOffset = currentOffset + dragAmount
+                                val isRtl = layoutDirection == LayoutDirection.Rtl
+                                val canPrevious =
+                                    connection?.player?.previousMediaItemIndex
+                                        ?.let { it != -1 } == true
+                                val canNext =
+                                    connection?.player?.nextMediaItemIndex
+                                        ?.let { it != -1 } == true
+                                val wantsPrevious =
+                                    if (isRtl) proposedOffset < 0f else proposedOffset > 0f
+                                val canMoveInDirection =
+                                    if (wantsPrevious) canPrevious else canNext
+                                val returningToCenter =
+                                    currentOffset != 0f &&
+                                        dragAmount != 0f &&
+                                        (currentOffset > 0f) != (dragAmount > 0f)
+                                val resistance =
+                                    if (canMoveInDirection || returningToCenter) 1f else 0.18f
+                                val maxOffset = layout.artworkSizePx * 0.48f
+                                val target =
+                                    (currentOffset + (dragAmount * resistance))
+                                        .coerceIn(-maxOffset, maxOffset)
+
+                                gestureScope.launch {
+                                    artworkOffset.snapTo(target)
+                                }
+                            },
+                            onDragEnd = {
+                                val elapsedMs =
+                                    (System.currentTimeMillis() - artworkDragStartMs)
+                                        .coerceAtLeast(1L)
+                                val velocityPxPerMs = artworkDragDistance / elapsedMs.toFloat()
+                                val canPrevious =
+                                    connection?.player?.previousMediaItemIndex
+                                        ?.let { it != -1 } == true
+                                val canNext =
+                                    connection?.player?.nextMediaItemIndex
+                                        ?.let { it != -1 } == true
+                                when (
+                                    decideCarArtworkSwipe(
+                                        offsetPx = artworkOffset.value,
+                                        artworkWidthPx = layout.artworkSizePx,
+                                        velocityPxPerMs = velocityPxPerMs,
+                                        canPrevious = canPrevious,
+                                        canNext = canNext,
+                                        isRtl = layoutDirection == LayoutDirection.Rtl,
+                                    )
+                                ) {
+                                    CarArtworkSwipeAction.PREVIOUS -> {
+                                        connection?.player?.let { player ->
+                                            player.seekToPreviousMediaItem()
+                                            if (
+                                                player.playbackState == Player.STATE_IDLE ||
+                                                    player.playbackState == Player.STATE_ENDED
+                                            ) {
+                                                player.prepare()
+                                            }
+                                            player.playWhenReady = true
+                                        }
+                                    }
+                                    CarArtworkSwipeAction.NEXT -> connection?.seekToNext()
+                                    CarArtworkSwipeAction.NONE -> Unit
+                                }
+                                gestureScope.launch {
+                                    artworkOffset.animateTo(
+                                        targetValue = 0f,
+                                        animationSpec = tween(durationMillis = 170),
+                                    )
+                                }
+                            },
+                        )
+                    }
                     .clip(MaterialTheme.shapes.extraLarge),
             contentAlignment = Alignment.Center,
         ) {
@@ -379,5 +513,18 @@ fun CarNowPlayingScreen(
                 }
             },
         )
+    }
+}
+
+
+internal fun formatCarPlaybackTime(positionMs: Long): String {
+    val totalSeconds = (positionMs.coerceAtLeast(0L) / 1000L)
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%d:%02d".format(minutes, seconds)
     }
 }
