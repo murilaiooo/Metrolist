@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.Button
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -32,13 +31,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
+import com.metrolist.music.car.feedback.CarOperationState
 import com.metrolist.music.car.library.CarLibraryIndex
 import com.metrolist.music.car.library.CarLibraryMediaResolver
 import com.metrolist.music.car.library.CarLibraryOpenResult
 import com.metrolist.music.car.library.CarLibraryQueueResolution
 import com.metrolist.music.car.library.CarLibraryRefreshResult
 import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarQueueOperation
+import com.metrolist.music.car.library.carQueuePreparingOperation
+import com.metrolist.music.car.library.carQueueUnavailableOperation
+import com.metrolist.music.car.ui.component.CarOperationPanel
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -74,10 +79,16 @@ fun CarLibraryScreen(
     val scope = rememberCoroutineScope()
     val mediaResolver = carLibrarySession.mediaResolver
 
+    val libraryIndex by carLibrarySession.index.collectAsStateWithLifecycle()
+    val libraryOperation by carLibrarySession.operation.collectAsStateWithLifecycle()
     var state by remember {
-        mutableStateOf<CarLibraryManagementState>(CarLibraryManagementState.Loading)
+        mutableStateOf<CarLibraryManagementState>(
+            carLibrarySession.index.value
+                ?.let(CarLibraryManagementState::Active)
+                ?: CarLibraryManagementState.Empty,
+        )
     }
-    var playbackMessage by remember { mutableStateOf<String?>(null) }
+    var queueOperation by remember { mutableStateOf<CarQueueOperation?>(null) }
 
     fun takeReadPermission(uri: Uri) {
         runCatching {
@@ -90,7 +101,6 @@ fun CarLibraryScreen(
 
     fun openTree(uri: Uri) {
         takeReadPermission(uri)
-        state = CarLibraryManagementState.Loading
         scope.launch {
             state =
                 withContext(Dispatchers.IO) {
@@ -100,11 +110,19 @@ fun CarLibraryScreen(
     }
 
     fun refreshLibrary() {
-        state = CarLibraryManagementState.Loading
         scope.launch {
-            state =
+            val result =
                 withContext(Dispatchers.IO) {
-                    carLibrarySession.refresh().toManagementState()
+                    carLibrarySession.refresh()
+                }
+            val preservedIndex = carLibrarySession.index.value
+            state =
+                when {
+                    result is CarLibraryRefreshResult.Unavailable && preservedIndex != null ->
+                        CarLibraryManagementState.Active(preservedIndex)
+                    result is CarLibraryRefreshResult.Invalid && preservedIndex != null ->
+                        CarLibraryManagementState.Active(preservedIndex)
+                    else -> result.toManagementState()
                 }
         }
     }
@@ -114,13 +132,24 @@ fun CarLibraryScreen(
         startIndex: Int,
         title: String?,
     ) {
+        val selectedSongId = songIds.getOrNull(startIndex) ?: return
+        val selectedTitle =
+            carLibrarySession.index.value
+                ?.song(selectedSongId)
+                ?.title
+                ?: title
+                ?: "track"
         val playerConnection = connection
         if (playerConnection == null) {
-            playbackMessage = context.getString(R.string.car_player_starting)
+            queueOperation =
+                carQueueUnavailableOperation(
+                    songId = selectedSongId,
+                    message = context.getString(R.string.car_player_starting),
+                )
             return
         }
 
-        playbackMessage = context.getString(R.string.car_library_preparing_queue)
+        queueOperation = carQueuePreparingOperation(selectedSongId, selectedTitle)
         scope.launch {
             val resolution =
                 withContext(Dispatchers.IO) {
@@ -134,21 +163,30 @@ fun CarLibraryScreen(
             when (resolution) {
                 is CarLibraryQueueResolution.Ready -> {
                     playerConnection.playQueue(resolution.queue)
-                    playbackMessage =
+                    queueOperation =
                         if (resolution.skippedSongIds.isEmpty()) {
                             null
                         } else {
-                            context.getString(
-                                R.string.car_library_skipped_tracks,
-                                resolution.skippedSongIds.size,
+                            CarQueueOperation(
+                                songId = null,
+                                operation =
+                                    CarOperationState.Success(
+                                        context.getString(
+                                            R.string.car_library_skipped_tracks,
+                                            resolution.skippedSongIds.size,
+                                        ),
+                                    ),
                             )
                         }
                     onOpenNowPlaying()
                 }
 
                 is CarLibraryQueueResolution.Unavailable -> {
-                    playbackMessage =
-                        context.getString(R.string.car_library_track_unavailable)
+                    queueOperation =
+                        carQueueUnavailableOperation(
+                            songId = resolution.songId,
+                            message = context.getString(R.string.car_library_track_unavailable),
+                        )
                 }
             }
         }
@@ -159,11 +197,10 @@ fun CarLibraryScreen(
             uri?.let(::openTree)
         }
 
-    LaunchedEffect(carLibrarySession) {
-        state =
-            withContext(Dispatchers.IO) {
-                carLibrarySession.reopen().toManagementState()
-            }
+    LaunchedEffect(libraryIndex) {
+        libraryIndex?.let { index ->
+            state = CarLibraryManagementState.Active(index)
+        }
     }
 
     Column(
@@ -195,11 +232,7 @@ fun CarLibraryScreen(
             ) {
                 when (val current = state) {
                     CarLibraryManagementState.Loading -> {
-                        Text(
-                            text = stringResource(R.string.car_library_loading),
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        CarOperationPanel(libraryOperation)
                     }
 
                     CarLibraryManagementState.Empty -> {
@@ -324,12 +357,21 @@ fun CarLibraryScreen(
             }
         }
 
+        val showLibraryOperation =
+            when (libraryOperation) {
+                is CarOperationState.Running -> true
+                is CarOperationState.Success,
+                is CarOperationState.Error,
+                -> state is CarLibraryManagementState.Active
+                CarOperationState.Idle -> false
+            }
+        if (showLibraryOperation) {
+            CarOperationPanel(libraryOperation)
+        }
+
         (state as? CarLibraryManagementState.Active)?.let { active ->
-            playbackMessage?.let { message ->
-                Text(
-                    text = message,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            queueOperation?.let { current ->
+                CarOperationPanel(current.operation)
             }
 
             val allSongIds = active.index.songs.map { it.id }

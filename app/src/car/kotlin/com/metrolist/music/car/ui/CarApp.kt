@@ -31,6 +31,7 @@ import com.metrolist.music.car.importer.CarImportRepository
 import com.metrolist.music.car.importer.CarLegacyImportProvenanceStore
 import com.metrolist.music.car.input.CarInputDiagnostics
 import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarLibraryStartupCoordinator
 import com.metrolist.music.car.library.CarUnifiedCatalog
 import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.car.ui.player.CarMiniPlayer
@@ -41,9 +42,11 @@ import com.metrolist.music.playback.DownloadUtil
 import com.metrolist.music.playback.PlayerConnection
 import com.metrolist.music.car.ui.theme.CarDesignTokens
 import com.metrolist.music.car.ui.theme.CarTheme
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CarApp(
@@ -62,6 +65,10 @@ fun CarApp(
         remember(context) {
             CarLibrarySession(context)
         }
+    val carLibraryStartup =
+        remember(carLibrarySession) {
+            CarLibraryStartupCoordinator(carLibrarySession::reopen)
+        }
     val provenanceStore =
         remember(context) {
             CarLegacyImportProvenanceStore(context)
@@ -76,8 +83,10 @@ fun CarApp(
     val importStatus by importRepository.status.collectAsStateWithLifecycle()
     var legacySongIds by remember { mutableStateOf(provenanceStore.importedSongIds()) }
 
-    LaunchedEffect(carLibrarySession) {
-        carLibrarySession.reopen()
+    LaunchedEffect(carLibraryStartup) {
+        withContext(Dispatchers.IO) {
+            carLibraryStartup.reopenOnce()
+        }
     }
     LaunchedEffect(importStatus) {
         provenanceStore.markImported(importRepository.completedSongIds())

@@ -26,12 +26,17 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
 import com.metrolist.music.car.importer.CarArtworkStore
 import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarQueueOperation
 import com.metrolist.music.car.library.CarUnifiedCatalog
 import com.metrolist.music.car.library.CarUnifiedPlaybackResolver
 import com.metrolist.music.car.library.CarUnifiedQueueResolution
 import com.metrolist.music.car.library.CarUnifiedSong
+import com.metrolist.music.car.library.carQueuePreparingOperation
+import com.metrolist.music.car.library.carQueueUnavailableOperation
+import com.metrolist.music.car.ui.component.CarOperationPanel
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -58,7 +63,8 @@ fun CarSearchScreen(
         }
 
     var query by remember { mutableStateOf("") }
-    var resolvingSongId by remember { mutableStateOf<String?>(null) }
+    var queueOperation by remember { mutableStateOf<CarQueueOperation?>(null) }
+    var resolutionJob by remember { mutableStateOf<Job?>(null) }
 
     val results =
         remember(catalog, query) {
@@ -95,6 +101,10 @@ fun CarSearchScreen(
             )
         }
 
+        queueOperation?.let { current ->
+            CarOperationPanel(current.operation)
+        }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(8f, density)),
@@ -109,25 +119,45 @@ fun CarSearchScreen(
                         Modifier
                             .fillMaxWidth()
                             .clickable(
-                                enabled = connection != null && resolvingSongId == null,
+                                enabled = connection != null && resolutionJob?.isActive != true,
                             ) {
-                                val playerConnection = connection ?: return@clickable
-                                resolvingSongId = song.id
-                                scope.launch {
-                                    val resolution =
-                                        withContext(Dispatchers.IO) {
-                                            resolver.resolveQueue(
-                                                songs = results,
-                                                startIndex = resultIndex,
-                                                title = "Search",
-                                            )
-                                        }
-                                    resolvingSongId = null
-                                    if (resolution is CarUnifiedQueueResolution.Ready) {
-                                        playerConnection.playQueue(resolution.queue)
-                                        onOpenNowPlaying()
-                                    }
+                                val playerConnection = connection
+                                if (playerConnection == null) {
+                                    queueOperation =
+                                        carQueueUnavailableOperation(
+                                            songId = song.id,
+                                            message = context.getString(R.string.car_player_starting),
+                                        )
+                                    return@clickable
                                 }
+
+                                resolutionJob?.cancel()
+                                queueOperation = carQueuePreparingOperation(song.id, song.title)
+                                resolutionJob =
+                                    scope.launch {
+                                        val resolution =
+                                            withContext(Dispatchers.IO) {
+                                                resolver.resolveQueue(
+                                                    songs = results,
+                                                    startIndex = resultIndex,
+                                                    title = "Search",
+                                                )
+                                            }
+                                        when (resolution) {
+                                            is CarUnifiedQueueResolution.Ready -> {
+                                                queueOperation = null
+                                                playerConnection.playQueue(resolution.queue)
+                                                onOpenNowPlaying()
+                                            }
+                                            is CarUnifiedQueueResolution.Unavailable -> {
+                                                queueOperation =
+                                                    carQueueUnavailableOperation(
+                                                        songId = resolution.songId,
+                                                        message = "Track file is unavailable",
+                                                    )
+                                            }
+                                        }
+                                    }
                             },
                     shape = MaterialTheme.shapes.large,
                     tonalElevation = viewport.pxToDp(if (isCurrent) 5f else 1f, density),

@@ -24,14 +24,20 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
+import com.metrolist.music.car.feedback.CarOperationState
 import com.metrolist.music.car.importer.CarArtworkStore
 import com.metrolist.music.car.library.CarLibrarySession
+import com.metrolist.music.car.library.CarQueueOperation
 import com.metrolist.music.car.library.CarSongSourceKind
 import com.metrolist.music.car.library.CarUnifiedPlaybackResolver
 import com.metrolist.music.car.library.CarUnifiedQueueResolution
 import com.metrolist.music.car.library.CarUnifiedSong
+import com.metrolist.music.car.library.carQueuePreparingOperation
+import com.metrolist.music.car.library.carQueueUnavailableOperation
+import com.metrolist.music.car.ui.component.CarOperationPanel
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -56,27 +62,48 @@ fun CarDownloadsScreen(
                 legacyArtworkStore = CarArtworkStore(context.filesDir),
             )
         }
-    var resolvingSongId by remember { mutableStateOf<String?>(null) }
+    var queueOperation by remember { mutableStateOf<CarQueueOperation?>(null) }
+    var resolutionJob by remember { mutableStateOf<Job?>(null) }
 
     fun play(index: Int) {
-        val playerConnection = connection ?: return
-        if (resolvingSongId != null) return
-        resolvingSongId = catalog[index].id
-        scope.launch {
-            val resolution =
-                withContext(Dispatchers.IO) {
-                    resolver.resolveQueue(
-                        songs = catalog,
-                        startIndex = index,
-                        title = "Music",
-                    )
-                }
-            resolvingSongId = null
-            if (resolution is CarUnifiedQueueResolution.Ready) {
-                playerConnection.playQueue(resolution.queue)
-                onOpenNowPlaying()
-            }
+        val song = catalog.getOrNull(index) ?: return
+        val playerConnection = connection
+        if (playerConnection == null) {
+            queueOperation =
+                carQueueUnavailableOperation(
+                    songId = song.id,
+                    message = context.getString(R.string.car_player_starting),
+                )
+            return
         }
+
+        resolutionJob?.cancel()
+        queueOperation = carQueuePreparingOperation(song.id, song.title)
+        resolutionJob =
+            scope.launch {
+                val resolution =
+                    withContext(Dispatchers.IO) {
+                        resolver.resolveQueue(
+                            songs = catalog,
+                            startIndex = index,
+                            title = "Music",
+                        )
+                    }
+                when (resolution) {
+                    is CarUnifiedQueueResolution.Ready -> {
+                        queueOperation = null
+                        playerConnection.playQueue(resolution.queue)
+                        onOpenNowPlaying()
+                    }
+                    is CarUnifiedQueueResolution.Unavailable -> {
+                        queueOperation =
+                            carQueueUnavailableOperation(
+                                songId = resolution.songId,
+                                message = "Track file is unavailable",
+                            )
+                    }
+                }
+            }
     }
 
     Column(
@@ -100,6 +127,10 @@ fun CarDownloadsScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        queueOperation?.let { current ->
+            CarOperationPanel(current.operation)
+        }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(8f, density)),
@@ -114,7 +145,7 @@ fun CarDownloadsScreen(
                         Modifier
                             .fillMaxWidth()
                             .clickable(
-                                enabled = connection != null && resolvingSongId == null,
+                                enabled = queueOperation?.songId != song.id,
                                 onClick = { play(index) },
                             ),
                     shape = MaterialTheme.shapes.large,
