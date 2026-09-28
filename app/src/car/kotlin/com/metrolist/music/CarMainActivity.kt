@@ -11,6 +11,8 @@ import com.metrolist.music.car.input.CarInputRouter
 import com.metrolist.music.car.input.CarKeySignature
 import com.metrolist.music.car.input.CarMediaAction
 import com.metrolist.music.car.importer.CarImportRepository
+import com.metrolist.music.car.startup.CarStartupMilestone
+import com.metrolist.music.car.startup.CarStartupMilestoneTracker
 import com.metrolist.music.car.ui.CarApp
 import com.metrolist.music.car.ui.CarPlayerConnectionHost
 import com.metrolist.music.db.MusicDatabase
@@ -30,11 +32,13 @@ class CarMainActivity : ComponentActivity() {
     lateinit var importRepository: CarImportRepository
 
     private lateinit var playerHost: CarPlayerConnectionHost
+    private val startupTracker = CarStartupMilestoneTracker()
     private val inputRouter = CarInputRouter()
     internal val inputDiagnostics = CarInputDiagnostics()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        startupTracker.mark(CarStartupMilestone.ACTIVITY_CREATED)
 
         playerHost =
             CarPlayerConnectionHost(
@@ -50,8 +54,10 @@ class CarMainActivity : ComponentActivity() {
                 downloadUtil = downloadUtil,
                 importRepository = importRepository,
                 inputDiagnostics = inputDiagnostics,
+                startupTracker = startupTracker,
             )
         }
+        startupTracker.mark(CarStartupMilestone.CONTENT_SET)
     }
 
     override fun onStart() {

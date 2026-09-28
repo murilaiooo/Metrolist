@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,8 @@ import com.metrolist.music.car.library.CarUnifiedCatalog
 import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.car.preferences.CarDislikeLedgerStore
 import com.metrolist.music.car.preferences.CarDislikeRepository
+import com.metrolist.music.car.startup.CarStartupMilestone
+import com.metrolist.music.car.startup.CarStartupMilestoneTracker
 import com.metrolist.music.car.ui.player.CarMiniPlayer
 import com.metrolist.music.car.ui.player.CarNowPlayingScreen
 import com.metrolist.music.constants.SongSortType
@@ -57,6 +60,7 @@ fun CarApp(
     downloadUtil: DownloadUtil,
     importRepository: CarImportRepository,
     inputDiagnostics: CarInputDiagnostics,
+    startupTracker: CarStartupMilestoneTracker,
 ) {
     val context = LocalContext.current.applicationContext
     val connection by connectionFlow.collectAsStateWithLifecycle()
@@ -90,10 +94,20 @@ fun CarApp(
     val dislikedSongIds by dislikeRepository.activeSongIds.collectAsStateWithLifecycle()
     var legacySongIds by remember { mutableStateOf(provenanceStore.importedSongIds()) }
 
+    SideEffect {
+        startupTracker.mark(CarStartupMilestone.SHELL_COMPOSED)
+    }
+    LaunchedEffect(connection) {
+        if (connection != null) {
+            startupTracker.mark(CarStartupMilestone.PLAYER_CONNECTED)
+        }
+    }
     LaunchedEffect(carLibraryStartup) {
+        startupTracker.mark(CarStartupMilestone.LIBRARY_REOPEN_STARTED)
         withContext(Dispatchers.IO) {
             carLibraryStartup.reopenOnce()
         }
+        startupTracker.mark(CarStartupMilestone.LIBRARY_READY)
     }
     LaunchedEffect(importStatus) {
         provenanceStore.markImported(importRepository.completedSongIds())

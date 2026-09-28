@@ -98,3 +98,39 @@ BUILD SUCCESSFUL in 3m 42s
 ```
 
 Existing compiler/deprecation warnings are baseline warnings, not new failures.
+
+## Car 0.3.0 startup instrumentation
+
+Task 10 added explicit startup milestones using the stable log tag `MetroListCarStartup`:
+- `ACTIVITY_CREATED`;
+- `CONTENT_SET`;
+- `SHELL_COMPOSED`;
+- `PLAYER_CONNECTED`;
+- `LIBRARY_REOPEN_STARTED`;
+- `LIBRARY_READY`.
+
+The shell does not await player connection or Car Library reopen. Both remain asynchronous.
+
+A single diagnostic cold trace on the 2 GB / 1024x600 AVD recorded:
+- process start: 16:07:50.049;
+- `ACTIVITY_CREATED`: 16:07:50.377;
+- `CONTENT_SET`: +15 ms from Activity creation;
+- `SHELL_COMPOSED`: +205 ms;
+- Android `Displayed`: **773 ms** total;
+- `LIBRARY_REOPEN_STARTED`: +588 ms;
+- `LIBRARY_READY`: +595 ms;
+- `PLAYER_CONNECTED`: +778 ms.
+
+A subsequent stabilized 3-run batch recorded:
+- cold TotalTime: 2106 ms, 2041 ms, 2045 ms;
+- cold median: **2045 ms**;
+- hot TotalTime: 2 ms, 3 ms, 6 ms;
+- hot median: **3 ms**.
+
+In the slower cold samples, `SHELL_COMPOSED` still occurred around 636-640 ms, Car Library around 1.29-1.34 s, and player around 1.56-1.60 s. This means player connection and Car Library reopen are not blocking shell composition. The remaining variance is between composition and Android reporting the first displayed frame / process startup path.
+
+Task 10 target status on this debug AVD:
+- warm target <800 ms: **PASS**;
+- cold target <=1500 ms: **NOT CONSISTENTLY MET**. One cold trace was 773 ms, but the 3-run median was 2045 ms.
+
+No speculative Media3, Room, or playback-restoration rewrite was applied. The next performance pass should instrument first draw / pre-Activity process initialization before changing architecture.
