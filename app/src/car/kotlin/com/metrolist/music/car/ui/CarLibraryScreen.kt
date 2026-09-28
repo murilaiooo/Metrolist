@@ -36,6 +36,7 @@ import com.metrolist.music.R
 import com.metrolist.music.car.feedback.CarOperationState
 import com.metrolist.music.car.library.CarLibraryIndex
 import com.metrolist.music.car.library.CarLibraryMediaResolver
+import com.metrolist.music.car.library.CarLibraryMediaResolution
 import com.metrolist.music.car.library.CarLibraryOpenResult
 import com.metrolist.music.car.library.CarLibraryQueueResolution
 import com.metrolist.music.car.library.CarLibraryRefreshResult
@@ -44,6 +45,8 @@ import com.metrolist.music.car.library.CarQueueOperation
 import com.metrolist.music.car.library.carQueuePreparingOperation
 import com.metrolist.music.car.library.carQueueUnavailableOperation
 import com.metrolist.music.car.ui.component.CarOperationPanel
+import com.metrolist.music.car.ui.component.CarTrackRow
+import com.metrolist.music.car.ui.component.carTrackRowModel
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -78,6 +81,9 @@ fun CarLibraryScreen(
     val density = LocalDensity.current.density
     val scope = rememberCoroutineScope()
     val mediaResolver = carLibrarySession.mediaResolver
+    val currentMetadata by
+        connection?.mediaMetadata?.collectAsStateWithLifecycle()
+            ?: remember { mutableStateOf(null) }
 
     val libraryIndex by carLibrarySession.index.collectAsStateWithLifecycle()
     val libraryOperation by carLibrarySession.operation.collectAsStateWithLifecycle()
@@ -444,73 +450,35 @@ fun CarLibraryScreen(
                     items = active.index.songs,
                     key = { _, song -> "song:" + song.id },
                 ) { index, song ->
-                    Surface(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable(enabled = connection != null) {
-                                    playLocalQueue(
-                                        songIds = allSongIds,
-                                        startIndex = index,
-                                        title =
-                                            context.getString(
-                                                R.string.car_library,
-                                            ),
-                                    )
-                                },
-                        shape = MaterialTheme.shapes.large,
-                        tonalElevation = viewport.pxToDp(1f, density),
-                    ) {
-                        Row(
-                            modifier =
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        horizontal =
-                                            viewport.pxToDp(16f, density),
-                                        vertical =
-                                            viewport.pxToDp(14f, density),
-                                    ),
-                            horizontalArrangement =
-                                Arrangement.spacedBy(
-                                    viewport.pxToDp(12f, density),
-                                ),
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = song.title,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    maxLines = 1,
-                                )
-                                val artist =
-                                    song.artists
-                                        .joinToString(", ") { artist ->
-                                            artist.name
-                                        }
-                                        .ifBlank {
-                                            song.album?.name.orEmpty()
-                                        }
-                                if (artist.isNotBlank()) {
-                                    Text(
-                                        text = artist,
-                                        color =
-                                            MaterialTheme.colorScheme
-                                                .onSurfaceVariant,
-                                        maxLines = 1,
-                                    )
-                                }
-                            }
-                            if (song.explicit) {
-                                Text(
-                                    text = "E",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color =
-                                        MaterialTheme.colorScheme
-                                            .onSurfaceVariant,
-                                )
-                            }
+                    val isCurrent = currentMetadata?.id == song.id
+                    val isBusy =
+                        queueOperation?.songId == song.id &&
+                            queueOperation?.operation is CarOperationState.Running
+                    val artworkUri =
+                        when (val resolution = mediaResolver.resolve(song.id)) {
+                            is CarLibraryMediaResolution.Ready ->
+                                resolution.mediaItem.mediaMetadata.artworkUri?.toString()
+                            is CarLibraryMediaResolution.Unavailable -> null
                         }
-                    }
+
+                    CarTrackRow(
+                        model =
+                            carTrackRowModel(
+                                song = song,
+                                artworkUri = artworkUri,
+                                isCurrent = isCurrent,
+                                isBusy = isBusy,
+                            ),
+                        viewport = viewport,
+                        enabled = connection != null,
+                        onClick = {
+                            playLocalQueue(
+                                songIds = allSongIds,
+                                startIndex = index,
+                                title = context.getString(R.string.car_library),
+                            )
+                        },
+                    )
                 }
             }
         }

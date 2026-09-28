@@ -24,9 +24,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
+import com.metrolist.music.car.feedback.CarOperationState
 import com.metrolist.music.car.importer.CarArtworkStore
+import com.metrolist.music.car.library.CarLibraryMediaResolution
 import com.metrolist.music.car.library.CarLibrarySession
 import com.metrolist.music.car.library.CarQueueOperation
+import com.metrolist.music.car.library.CarSongSourceKind
 import com.metrolist.music.car.library.CarUnifiedCatalog
 import com.metrolist.music.car.library.CarUnifiedPlaybackResolver
 import com.metrolist.music.car.library.CarUnifiedQueueResolution
@@ -34,6 +37,8 @@ import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.car.library.carQueuePreparingOperation
 import com.metrolist.music.car.library.carQueueUnavailableOperation
 import com.metrolist.music.car.ui.component.CarOperationPanel
+import com.metrolist.music.car.ui.component.CarTrackRow
+import com.metrolist.music.car.ui.component.carTrackRowModel
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,11 +59,12 @@ fun CarSearchScreen(
     val currentMetadata by
         connection?.mediaMetadata?.collectAsStateWithLifecycle()
             ?: remember { mutableStateOf(null) }
+    val artworkStore = remember(context) { CarArtworkStore(context.filesDir) }
     val resolver =
-        remember(context, carLibrarySession) {
+        remember(carLibrarySession, artworkStore) {
             CarUnifiedPlaybackResolver(
                 carLibraryResolver = carLibrarySession.mediaResolver,
-                legacyArtworkStore = CarArtworkStore(context.filesDir),
+                legacyArtworkStore = artworkStore,
             )
         }
 
@@ -114,78 +120,80 @@ fun CarSearchScreen(
                 key = { _, song -> song.id },
             ) { resultIndex, song ->
                 val isCurrent = currentMetadata?.id == song.id
-                Surface(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                enabled = connection != null && resolutionJob?.isActive != true,
-                            ) {
-                                val playerConnection = connection
-                                if (playerConnection == null) {
-                                    queueOperation =
-                                        carQueueUnavailableOperation(
-                                            songId = song.id,
-                                            message = context.getString(R.string.car_player_starting),
-                                        )
-                                    return@clickable
-                                }
+                val isBusy =
+                    queueOperation?.songId == song.id &&
+                        queueOperation?.operation is CarOperationState.Running
+                val carLibraryArtwork =
+                    if (song.carLibrarySong != null) {
+                        when (val resolution = carLibrarySession.mediaResolver.resolve(song.id)) {
+                            is CarLibraryMediaResolution.Ready ->
+                                resolution.mediaItem.mediaMetadata.artworkUri?.toString()
+                            is CarLibraryMediaResolution.Unavailable -> null
+                        }
+                    } else {
+                        null
+                    }
+                val legacyArtwork =
+                    if (CarSongSourceKind.LEGACY_IMPORTED in song.sourceKinds) {
+                        runCatching { artworkStore.fileFor(song.id) }
+                            .getOrNull()
+                            ?.takeIf { it.isFile }
+                            ?.toURI()
+                            ?.toString()
+                    } else {
+                        null
+                    }
 
-                                resolutionJob?.cancel()
-                                queueOperation = carQueuePreparingOperation(song.id, song.title)
-                                resolutionJob =
-                                    scope.launch {
-                                        val resolution =
-                                            withContext(Dispatchers.IO) {
-                                                resolver.resolveQueue(
-                                                    songs = results,
-                                                    startIndex = resultIndex,
-                                                    title = "Search",
+                CarTrackRow(
+                    model =
+                        carTrackRowModel(
+                            song = song,
+                            carLibraryArtwork = carLibraryArtwork,
+                            legacyArtwork = legacyArtwork,
+                            isCurrent = isCurrent,
+                            isBusy = isBusy,
+                        ),
+                    viewport = viewport,
+                    enabled = connection != null,
+                    onClick = {
+                        val playerConnection = connection
+                        if (playerConnection == null) {
+                            queueOperation =
+                                carQueueUnavailableOperation(
+                                    songId = song.id,
+                                    message = context.getString(R.string.car_player_starting),
+                                )
+                        } else {
+                            resolutionJob?.cancel()
+                            queueOperation = carQueuePreparingOperation(song.id, song.title)
+                            resolutionJob =
+                                scope.launch {
+                                    val resolution =
+                                        withContext(Dispatchers.IO) {
+                                            resolver.resolveQueue(
+                                                songs = results,
+                                                startIndex = resultIndex,
+                                                title = "Search",
+                                            )
+                                        }
+                                    when (resolution) {
+                                        is CarUnifiedQueueResolution.Ready -> {
+                                            queueOperation = null
+                                            playerConnection.playQueue(resolution.queue)
+                                            onOpenNowPlaying()
+                                        }
+                                        is CarUnifiedQueueResolution.Unavailable -> {
+                                            queueOperation =
+                                                carQueueUnavailableOperation(
+                                                    songId = resolution.songId,
+                                                    message = "Track file is unavailable",
                                                 )
-                                            }
-                                        when (resolution) {
-                                            is CarUnifiedQueueResolution.Ready -> {
-                                                queueOperation = null
-                                                playerConnection.playQueue(resolution.queue)
-                                                onOpenNowPlaying()
-                                            }
-                                            is CarUnifiedQueueResolution.Unavailable -> {
-                                                queueOperation =
-                                                    carQueueUnavailableOperation(
-                                                        songId = resolution.songId,
-                                                        message = "Track file is unavailable",
-                                                    )
-                                            }
                                         }
                                     }
-                            },
-                    shape = MaterialTheme.shapes.large,
-                    tonalElevation = viewport.pxToDp(if (isCurrent) 5f else 1f, density),
-                ) {
-                    Column(
-                        modifier = Modifier.padding(viewport.pxToDp(18f, density)),
-                    ) {
-                        Text(
-                            text = song.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            color =
-                                if (isCurrent) {
-                                    MaterialTheme.colorScheme.primary
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                            maxLines = 1,
-                        )
-                        val artist = song.artists.joinToString(", ").ifBlank { song.album.orEmpty() }
-                        if (artist.isNotBlank()) {
-                            Text(
-                                text = artist,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
+                                }
                         }
-                    }
-                }
+                    },
+                )
             }
         }
     }

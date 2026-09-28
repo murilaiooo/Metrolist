@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.R
 import com.metrolist.music.car.feedback.CarOperationState
 import com.metrolist.music.car.importer.CarArtworkStore
+import com.metrolist.music.car.library.CarLibraryMediaResolution
 import com.metrolist.music.car.library.CarLibrarySession
 import com.metrolist.music.car.library.CarQueueOperation
 import com.metrolist.music.car.library.CarSongSourceKind
@@ -35,6 +36,8 @@ import com.metrolist.music.car.library.CarUnifiedSong
 import com.metrolist.music.car.library.carQueuePreparingOperation
 import com.metrolist.music.car.library.carQueueUnavailableOperation
 import com.metrolist.music.car.ui.component.CarOperationPanel
+import com.metrolist.music.car.ui.component.CarTrackRow
+import com.metrolist.music.car.ui.component.carTrackRowModel
 import com.metrolist.music.playback.PlayerConnection
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -55,11 +58,12 @@ fun CarDownloadsScreen(
     val currentMetadata by
         connection?.mediaMetadata?.collectAsStateWithLifecycle()
             ?: remember { mutableStateOf(null) }
+    val artworkStore = remember(context) { CarArtworkStore(context.filesDir) }
     val resolver =
-        remember(context, carLibrarySession) {
+        remember(carLibrarySession, artworkStore) {
             CarUnifiedPlaybackResolver(
                 carLibraryResolver = carLibrarySession.mediaResolver,
-                legacyArtworkStore = CarArtworkStore(context.filesDir),
+                legacyArtworkStore = artworkStore,
             )
         }
     var queueOperation by remember { mutableStateOf<CarQueueOperation?>(null) }
@@ -140,71 +144,44 @@ fun CarDownloadsScreen(
                 key = { _, song -> song.id },
             ) { index, song ->
                 val isCurrent = currentMetadata?.id == song.id
-                Surface(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clickable(
-                                enabled = queueOperation?.songId != song.id,
-                                onClick = { play(index) },
-                            ),
-                    shape = MaterialTheme.shapes.large,
-                    tonalElevation = viewport.pxToDp(if (isCurrent) 5f else 1f, density),
-                ) {
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = viewport.pxToDp(18f, density),
-                                    vertical = viewport.pxToDp(16f, density),
-                                ),
-                        horizontalArrangement = Arrangement.spacedBy(viewport.pxToDp(12f, density)),
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = song.title,
-                                style = MaterialTheme.typography.titleMedium,
-                                color =
-                                    if (isCurrent) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface
-                                    },
-                                maxLines = 1,
-                            )
-                            val artist = song.artists.joinToString(", ").ifBlank { song.album.orEmpty() }
-                            if (artist.isNotBlank()) {
-                                Text(
-                                    text = artist,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                )
-                            }
-                            Text(
-                                text = sourceLabel(song),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                            )
+                val isBusy =
+                    queueOperation?.songId == song.id &&
+                        queueOperation?.operation is CarOperationState.Running
+                val carLibraryArtwork =
+                    if (song.carLibrarySong != null) {
+                        when (val resolution = carLibrarySession.mediaResolver.resolve(song.id)) {
+                            is CarLibraryMediaResolution.Ready ->
+                                resolution.mediaItem.mediaMetadata.artworkUri?.toString()
+                            is CarLibraryMediaResolution.Unavailable -> null
                         }
-                        if (song.explicit) {
-                            Text(
-                                text = "E",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    } else {
+                        null
                     }
-                }
+                val legacyArtwork =
+                    if (CarSongSourceKind.LEGACY_IMPORTED in song.sourceKinds) {
+                        runCatching { artworkStore.fileFor(song.id) }
+                            .getOrNull()
+                            ?.takeIf { it.isFile }
+                            ?.toURI()
+                            ?.toString()
+                    } else {
+                        null
+                    }
+
+                CarTrackRow(
+                    model =
+                        carTrackRowModel(
+                            song = song,
+                            carLibraryArtwork = carLibraryArtwork,
+                            legacyArtwork = legacyArtwork,
+                            isCurrent = isCurrent,
+                            isBusy = isBusy,
+                        ),
+                    viewport = viewport,
+                    enabled = connection != null,
+                    onClick = { play(index) },
+                )
             }
         }
     }
 }
-
-private fun sourceLabel(song: CarUnifiedSong): String =
-    buildList {
-        if (CarSongSourceKind.CAR_LIBRARY_LOCAL in song.sourceKinds) add("Car Library")
-        if (CarSongSourceKind.CAR_LOCAL_DOWNLOAD in song.sourceKinds) add("Car download")
-        if (CarSongSourceKind.LEGACY_IMPORTED in song.sourceKinds) add("Legacy backup")
-    }.joinToString(" · ")
