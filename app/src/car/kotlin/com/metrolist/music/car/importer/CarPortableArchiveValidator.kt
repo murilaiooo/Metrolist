@@ -3,6 +3,7 @@ package com.metrolist.music.car.importer
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.security.MessageDigest
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import kotlinx.serialization.decodeFromString
@@ -17,6 +18,7 @@ class CarPortableArchiveValidator(
     fun validate(
         input: InputStream,
         availableDestinationBytes: Long,
+        cancellationCheck: () -> Unit = {},
     ): ValidatedCarBackup {
         val errors = mutableListOf<String>()
         val entries = linkedMapOf<String, EntryObservation>()
@@ -24,6 +26,7 @@ class CarPortableArchiveValidator(
         try {
             ZipInputStream(input.buffered()).use { zip ->
                 while (true) {
+                    cancellationCheck()
                     val entry = zip.nextEntry ?: break
                     val name = entry.name
                     if (entries.containsKey(name)) {
@@ -40,6 +43,7 @@ class CarPortableArchiveValidator(
                         readEntry(
                             zip = zip,
                             capture = name == MANIFEST || name.startsWith("metadata/"),
+                            cancellationCheck = cancellationCheck,
                         )
                     if (observation.captureOverflow) {
                         errors += "Metadata entry too large: $name"
@@ -55,6 +59,8 @@ class CarPortableArchiveValidator(
                     zip.closeEntry()
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             errors += "Archive validation failed: ${error::class.simpleName}"
         }
@@ -379,6 +385,7 @@ class CarPortableArchiveValidator(
     private fun readEntry(
         zip: ZipInputStream,
         capture: Boolean,
+        cancellationCheck: () -> Unit,
     ): EntryObservation {
         val digest = MessageDigest.getInstance("SHA-256")
         val output = if (capture) ByteArrayOutputStream() else null
@@ -387,6 +394,7 @@ class CarPortableArchiveValidator(
         var captureOverflow = false
 
         while (true) {
+            cancellationCheck()
             val count = zip.read(buffer)
             if (count < 0) break
             if (count == 0) continue

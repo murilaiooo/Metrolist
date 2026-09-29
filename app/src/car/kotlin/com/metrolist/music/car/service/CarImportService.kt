@@ -30,6 +30,7 @@ import com.metrolist.music.playback.DownloadUtil
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 import timber.log.Timber
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +42,7 @@ sealed interface CarImportServiceCommand {
     data class Start(val uri: Uri) : CarImportServiceCommand
     data object Resume : CarImportServiceCommand
     data object Discard : CarImportServiceCommand
+    data object Cancel : CarImportServiceCommand
 
     companion object {
         fun from(intent: Intent): CarImportServiceCommand =
@@ -49,6 +51,7 @@ sealed interface CarImportServiceCommand {
                     Start(requireNotNull(intent.data) { "Import source URI is required" })
                 CarImportService.ACTION_RESUME -> Resume
                 CarImportService.ACTION_DISCARD -> Discard
+                CarImportService.ACTION_CANCEL -> Cancel
                 else -> throw IllegalArgumentException(
                     "Unknown Car import action: ${intent.action}",
                 )
@@ -112,13 +115,24 @@ class CarImportService : Service() {
                     return START_NOT_STICKY
                 }
 
+        if (command is CarImportServiceCommand.Cancel) {
+            activeJob?.cancel(CancellationException("Import cancelled by user"))
+            repository.refreshFromDisk()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (activeJob?.isActive == true) return START_NOT_STICKY
         startInForeground()
         activeJob =
             serviceScope.launch {
                 try {
                     handle(command)
+                } catch (error: CancellationException) {
+                    repository.refreshFromDisk()
+                    throw error
                 } finally {
+                    activeJob = null
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf(startId)
                 }
@@ -162,6 +176,8 @@ class CarImportService : Service() {
                     coordinator.discardIncomplete(),
                 )
             }
+
+            CarImportServiceCommand.Cancel -> Unit
         }
     }
 
@@ -272,6 +288,7 @@ class CarImportService : Service() {
         const val ACTION_START = "com.metrolist.music.car.import.START"
         const val ACTION_RESUME = "com.metrolist.music.car.import.RESUME"
         const val ACTION_DISCARD = "com.metrolist.music.car.import.DISCARD"
+        const val ACTION_CANCEL = "com.metrolist.music.car.import.CANCEL"
 
         private const val CHANNEL_ID = "car_import"
         private const val NOTIFICATION_ID = 9201

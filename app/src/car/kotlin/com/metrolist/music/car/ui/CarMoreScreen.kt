@@ -204,12 +204,26 @@ fun CarMoreScreen(
                 ) {
                     Button(
                         onClick = { importBackup.launch(arrayOf("*/*")) },
+                        enabled = importStatus !is CarImportStatus.Running,
                         modifier =
                             Modifier.sizeIn(
                                 minHeight = viewport.pxToDp(60f, density),
                             ),
                     ) {
                         Text(stringResource(R.string.car_import_legacy_backup))
+                    }
+                    if (importStatus is CarImportStatus.Running) {
+                        OutlinedButton(
+                            onClick = {
+                                startImportAction(CarImportService.ACTION_CANCEL)
+                            },
+                            modifier =
+                                Modifier.sizeIn(
+                                    minHeight = viewport.pxToDp(60f, density),
+                                ),
+                        ) {
+                            Text(stringResource(R.string.car_import_cancel))
+                        }
                     }
                     if (importStatus is CarImportStatus.Interrupted) {
                         OutlinedButton(

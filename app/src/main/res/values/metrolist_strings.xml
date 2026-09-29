@@ -106,6 +106,7 @@
     <string name="car_import_status">Windows backup compatibility</string>
     <string name="car_import_resume">Resume</string>
     <string name="car_import_discard">Discard</string>
+    <string name="car_import_cancel">Cancel import</string>
     <string name="car_diagnostics">Input &amp; system diagnostics</string>
     <string name="car_diagnostics_desc">Use this screen on the head unit to verify real panel and steering-wheel key codes. Volume remains system controlled.</string>
     <string name="car_queue">Queue</string>

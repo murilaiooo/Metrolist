@@ -45,6 +45,16 @@ class CarImportServiceCommandTest {
     }
 
     @Test
+    fun cancelDoesNotRequireSourceUri() {
+        val command =
+            CarImportServiceCommand.from(
+                Intent(CarImportService.ACTION_CANCEL),
+            )
+
+        assertTrue(command is CarImportServiceCommand.Cancel)
+    }
+
+    @Test
     fun notificationUsesGenericProgressSnapshot() {
         val progress =
             CarOperationProgress(

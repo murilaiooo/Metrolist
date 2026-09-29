@@ -7,6 +7,10 @@ import java.io.FilterInputStream
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 data class CarImportPreflight(
     val backup: ValidatedCarBackup,
@@ -49,6 +53,8 @@ class CarImportCoordinator(
         resume: Boolean,
         onProgress: (CarOperationProgress) -> Unit = {},
     ): CarImportResult {
+        val activeJob = currentCoroutineContext()[Job]
+        val cancellationCheck: () -> Unit = { activeJob?.ensureActive() ?: Unit }
         val sourceSize = source.sizeBytes
         onProgress(
             CarOperationProgress(
@@ -65,7 +71,10 @@ class CarImportCoordinator(
                     checkSpace = !resume,
                     onProgress = onProgress,
                     sourceSizeBytes = sourceSize,
+                    cancellationCheck = cancellationCheck,
                 )
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 return CarImportResult.Failure(
                     CarImportPhase.VALIDATING,
@@ -102,6 +111,7 @@ class CarImportCoordinator(
                     journal = journal,
                     totalBytes = preflight.requiredDestinationBytes,
                     onProgress = onProgress,
+                    cancellationCheck = cancellationCheck,
                 )
 
             journal = journal.copy(phase = CarImportPhase.COMMITTING)
@@ -119,6 +129,7 @@ class CarImportCoordinator(
                     journal = journal,
                     totalBytes = preflight.requiredDestinationBytes,
                     onProgress = onProgress,
+                    cancellationCheck = cancellationCheck,
                 )
             journal = journal.copy(phase = CarImportPhase.COMPLETE)
             journalStore.save(journal)
@@ -126,6 +137,8 @@ class CarImportCoordinator(
                 importedSongs = journal.songs.values.count(CarSongImportRecord::completed),
                 totalSongs = preflight.backup.songs.size,
             )
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: Exception) {
             CarImportResult.Failure(
                 phase = journal.phase,
@@ -212,6 +225,7 @@ class CarImportCoordinator(
         checkSpace: Boolean,
         onProgress: ((CarOperationProgress) -> Unit)? = null,
         sourceSizeBytes: Long? = source.sizeBytes,
+        cancellationCheck: () -> Unit = {},
     ): CarImportPreflight {
         val totalBytes = sourceSizeBytes?.takeIf { it >= 0L }
         val progress =
@@ -245,6 +259,7 @@ class CarImportCoordinator(
                 validator.validate(
                     input = countingInput,
                     availableDestinationBytes = Long.MAX_VALUE,
+                    cancellationCheck = cancellationCheck,
                 )
             }
         val backup = validatedBackup.withoutSongs(excludedSongIds())
@@ -327,6 +342,7 @@ class CarImportCoordinator(
         journal: CarImportJournal,
         totalBytes: Long,
         onProgress: (CarOperationProgress) -> Unit,
+        cancellationCheck: () -> Unit,
     ): CarImportJournal {
         var current = initializeJournal(backup, journal)
         val progress =
@@ -360,6 +376,7 @@ class CarImportCoordinator(
         source.open().use { input ->
             ZipInputStream(input.buffered()).use { zip ->
                 while (true) {
+                    cancellationCheck()
                     val entry = zip.nextEntry ?: break
                     val spanOwner = spanOwners[entry.name]
                     val artworkSongIds = artworkOwners[entry.name]
@@ -375,7 +392,11 @@ class CarImportCoordinator(
                             prepared += resource.songId
                         }
                         if (!current.songs.getValue(resource.songId).cacheReady) {
-                            mediaTarget.writeSpan(resource, span, nonClosing(zip))
+                            mediaTarget.writeSpan(
+                                resource,
+                                span,
+                                nonClosing(zip, cancellationCheck),
+                            )
                             processedBytes = Math.addExact(processedBytes, span.length)
                             val left = remainingSpans.getValue(resource.songId) - 1
                             remainingSpans[resource.songId] = left
@@ -393,6 +414,7 @@ class CarImportCoordinator(
                             zip = zip,
                             songIds = artworkSongIds,
                             journal = current,
+                            cancellationCheck = cancellationCheck,
                         )
                         if (missingCopies > 0) {
                             val artworkBytes =
@@ -478,6 +500,7 @@ class CarImportCoordinator(
         zip: ZipInputStream,
         songIds: List<String>,
         journal: CarImportJournal,
+        cancellationCheck: () -> Unit,
     ): CarImportJournal {
         var current = journal
         val missing = songIds.filter { !current.songs.getValue(it).artworkReady }
@@ -489,7 +512,7 @@ class CarImportCoordinator(
                 existing
             } else {
                 val first = missing.first()
-                artworkTarget.write(first, nonClosing(zip))
+                artworkTarget.write(first, nonClosing(zip, cancellationCheck))
                 current = updateRecord(current, first) { it.copy(artworkReady = true) }
                 first
             }
@@ -505,6 +528,7 @@ class CarImportCoordinator(
         journal: CarImportJournal,
         totalBytes: Long,
         onProgress: (CarOperationProgress) -> Unit,
+        cancellationCheck: () -> Unit,
     ): CarImportJournal {
         val transfers = backup.transfers.associateBy(CarPortableTransfer::requestId)
         val formats = backup.formats.associateBy(CarPortableFormat::id)
@@ -513,6 +537,7 @@ class CarImportCoordinator(
         var current = journal
 
         backup.songs.forEach { song ->
+            cancellationCheck()
             var record = current.songs.getValue(song.id)
             if (!record.downloadReady) {
                 mediaTarget.putCompletedDownload(transfers.getValue(song.id))
@@ -606,8 +631,25 @@ class CarImportCoordinator(
             .joinToString("") { "%02x".format(it) }
     }
 
-    private fun nonClosing(input: InputStream): InputStream =
+    private fun nonClosing(
+        input: InputStream,
+        cancellationCheck: () -> Unit,
+    ): InputStream =
         object : FilterInputStream(input) {
+            override fun read(): Int {
+                cancellationCheck()
+                return super.read()
+            }
+
+            override fun read(
+                buffer: ByteArray,
+                offset: Int,
+                length: Int,
+            ): Int {
+                cancellationCheck()
+                return super.read(buffer, offset, length)
+            }
+
             override fun close() = Unit
         }
 }
