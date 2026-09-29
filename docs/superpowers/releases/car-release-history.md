@@ -1,5 +1,34 @@
 # MetroList Car Release History
 
+## 0.3.0 — 2026-09-28
+
+Status: AVD acceptance complete; MetroList Car 0.3.0 packaged, identity-verified, and installed successfully on the primary 2 GB AVD.
+
+Product:
+- permanent dark automotive shell and shared driver-safe track rows;
+- redesigned Mini Player and user-approved Now Playing layout with elapsed/total time;
+- artwork swipe navigation with guarded distance/velocity thresholds;
+- green Like and red Dislike actions with persistent dislike history;
+- Disliked review with Undo, export, and confirmed bulk deletion;
+- unified progress feedback for legacy backup import and Car Library operations;
+- cancellable legacy import with safe interrupted-state recovery through Resume/Discard;
+- startup milestone instrumentation without speculative Media3/Room rewrites.
+
+Acceptance:
+- Car unit tests + assemble: PASS;
+- Foss, GMS, and Izzy unit tests + APK assemblies: PASS in final isolated Zulu JDK runs;
+- Windows desktop-core/export/app tests + distributable: PASS;
+- 2 GB AVD final APK install and launch: PASS;
+- viewport smoke matrix at 800x480, 1024x600, and 1280x720: PASS with zero UI bounds overflow;
+- 2.3 GB / 594-track legacy backup flow: user-confirmed PASS; the successful backup test was not redundantly repeated during release closeout;
+- cancellable import path: Car tests and focused code review PASS; manual backup-cancel was not re-run during final closeout at the user's request;
+- startup warm target: PASS, 3 ms median in the recorded stabilized batch;
+- startup cold target: not consistently met on debug AVD; recorded median 2045 ms;
+- final APK: 51,708,050 bytes, SHA-256 `cde5789d1d2684d3e20cefd0d2d48fb00cae6fef545f0cd90c5297e84a4682e7`, versionName 0.3.0, versionCode 3000.
+
+See `docs/superpowers/reviews/2026-09-28-metrolist-car-0.3.0-acceptance.md` for exact evidence and limitations.
+
+
 ## 0.2.0 — 2026-09-27
 
 Status: automated pre-physical review complete; packaged and ready for real head-unit acceptance.

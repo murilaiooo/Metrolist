@@ -134,3 +134,24 @@ Task 10 target status on this debug AVD:
 - cold target <=1500 ms: **NOT CONSISTENTLY MET**. One cold trace was 773 ms, but the 3-run median was 2045 ms.
 
 No speculative Media3, Room, or playback-restoration rewrite was applied. The next performance pass should instrument first draw / pre-Activity process initialization before changing architecture.
+
+## MetroList Car 0.3.0 final candidate
+
+Final APK:
+- `app/build/outputs/apk/car/debug/app-car-debug.apk`
+- size: 51,708,050 bytes
+- SHA-256: `cde5789d1d2684d3e20cefd0d2d48fb00cae6fef545f0cd90c5297e84a4682e7`
+- application ID: `com.metrolist.music.car.debug`
+- versionName: `0.3.0`
+- versionCode: `3000`
+
+Final AVD package verification:
+- `adb install -r`: PASS;
+- CarMainActivity launch: PASS;
+- 800x480: 44 UI nodes, max bounds 800x432, 0 overflow;
+- 1024x600: 44 UI nodes, max bounds 1024x552, 0 overflow;
+- 1280x720: 44 UI nodes, max bounds 1280x672, 0 overflow;
+- final AVD viewport restored to 1024x600.
+
+Screenshots are retained under `.superpowers/final-0.3.0-*.png`.
+See `docs/superpowers/reviews/2026-09-28-metrolist-car-0.3.0-acceptance.md` for complete release evidence and limitations.
