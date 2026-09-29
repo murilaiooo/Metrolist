@@ -142,6 +142,14 @@ android {
             isShrinkResources = true
             isCrunchPngs = false
             isDebuggable = false
+            val releaseSigningReady =
+                file("keystore/release.keystore").exists() &&
+                    !System.getenv("STORE_PASSWORD").isNullOrBlank() &&
+                    !System.getenv("KEY_ALIAS").isNullOrBlank() &&
+                    !System.getenv("KEY_PASSWORD").isNullOrBlank()
+            if (releaseSigningReady) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

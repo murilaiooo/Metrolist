@@ -192,6 +192,10 @@ class PlayerConnection(
     val isMuted = service.isMuted
     val currentStreamClient = service.currentStreamClient
 
+    fun setAudioSignalTrackingEnabled(enabled: Boolean) = service.setAudioSignalTrackingEnabled(enabled)
+
+    fun currentAudioSignalLevel(): Float = service.currentAudioSignalLevel()
+
     val waitingForNetworkConnection = service.waitingForNetworkConnection
 
     // Callback to check if playback changes should be blocked (e.g., Listen Together guest)

@@ -7,12 +7,24 @@ import androidx.media3.common.util.UnstableApi
 import timber.log.Timber
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import kotlin.math.abs
 import kotlin.math.pow
 
 @UnstableApi
 class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
     private var encoding = C.ENCODING_INVALID
     private var bytesPerSample = 0
+
+    @Volatile
+    var signalLevel: Float = 0f
+        private set
+
+    @Volatile
+    var signalTrackingEnabled: Boolean = false
+        set(value) {
+            field = value
+            if (!value) signalLevel = 0f
+        }
 
     @Volatile
     var enabled = false
@@ -60,6 +72,8 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
         val applyGain = enabled && gain.targetGainMb != 0
         val sampleCount = inputBuffer.remaining() / bytesPerSample
         val output = replaceOutputBuffer(sampleCount * bytesPerSample)
+        val trackSignal = signalTrackingEnabled
+        var peakLevel = 0f
 
         inputBuffer.order(ByteOrder.LITTLE_ENDIAN)
         output.order(ByteOrder.LITTLE_ENDIAN)
@@ -68,6 +82,9 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
             C.ENCODING_PCM_16BIT ->
                 repeat(sampleCount) {
                     val sample = inputBuffer.getShort()
+                    if (trackSignal) {
+                        peakLevel = maxOf(peakLevel, abs(sample.toInt()) / 32768f)
+                    }
                     output.putShort(
                         if (applyGain) {
                             (sample * gain.linearGain)
@@ -86,6 +103,12 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
                     val b1 = inputBuffer.get().toInt() and 0xFF
                     val b2 = inputBuffer.get().toInt()
                     val sample = (b2 shl 16) or (b1 shl 8) or b0
+                    if (trackSignal) {
+                        peakLevel = maxOf(
+                            peakLevel,
+                            (abs(sample.toLong()).coerceAtMost(8_388_608L) / 8_388_608f),
+                        )
+                    }
                     val processed =
                         if (applyGain) {
                             (sample * gain.linearGain)
@@ -102,6 +125,12 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
             C.ENCODING_PCM_32BIT ->
                 repeat(sampleCount) {
                     val sample = inputBuffer.getInt()
+                    if (trackSignal) {
+                        peakLevel = maxOf(
+                            peakLevel,
+                            (abs(sample.toDouble()) / 2_147_483_648.0).toFloat(),
+                        )
+                    }
                     output.putInt(
                         if (applyGain) {
                             (sample * gain.linearGain)
@@ -117,6 +146,9 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
             C.ENCODING_PCM_FLOAT ->
                 repeat(sampleCount) {
                     val sample = inputBuffer.getFloat()
+                    if (trackSignal) {
+                        peakLevel = maxOf(peakLevel, abs(sample).coerceAtMost(1f))
+                    }
                     output.putFloat(
                         if (applyGain) {
                             (sample * gain.linearGain.toFloat()).coerceIn(-1.0f, 1.0f)
@@ -127,12 +159,24 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
                 }
         }
 
+        if (trackSignal) {
+            val target = peakLevel.coerceIn(0f, 1f)
+            val previous = signalLevel
+            signalLevel =
+                if (target >= previous) {
+                    (previous * 0.35f) + (target * 0.65f)
+                } else {
+                    (previous * 0.80f) + (target * 0.20f)
+                }
+        }
+
         output.flip()
     }
 
     override fun onReset() {
         encoding = C.ENCODING_INVALID
         bytesPerSample = 0
+        signalLevel = 0f
     }
 
     private companion object {

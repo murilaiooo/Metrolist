@@ -1,18 +1,21 @@
 package com.metrolist.music.car.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationRail
-import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
@@ -20,7 +23,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -299,22 +307,84 @@ private fun CarNavigationRail(
     onNavigate: (CarDestination) -> Unit,
 ) {
     val density = LocalDensity.current.density
-    NavigationRail(
-        modifier = Modifier.width(viewport.pxToDp(CarDesignTokens.NavigationRailWidthPx, density)),
+    val railWidth = viewport.pxToDp(CarDesignTokens.NavigationRailWidthPx, density)
+    val itemSize = viewport.pxToDp(CarDesignTokens.NavigationItemSizePx, density)
+    val itemGap = viewport.pxToDp(CarDesignTokens.NavigationItemGapPx, density)
+    val cornerRadius = viewport.pxToDp(CarDesignTokens.NavigationItemCornerRadiusPx, density)
+    val iconSize = viewport.pxToDp(CarDesignTokens.NavigationIconSizePx, density)
+    val verticalPadding = viewport.pxToDp(CarDesignTokens.NavigationVerticalPaddingPx, density)
+    val borderWidth = viewport.pxToDp(1f, density)
+    val activeShadow = viewport.pxToDp(10f, density)
+    val inactiveShadow = viewport.pxToDp(4f, density)
+
+    Column(
+        modifier =
+            Modifier
+                .width(railWidth)
+                .fillMaxHeight()
+                .background(Color(0xFF0B0F13))
+                .padding(vertical = verticalPadding),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(itemGap),
     ) {
         CAR_NAV_ITEMS.forEach { item ->
-            NavigationRailItem(
-                selected = current == item.destination,
-                onClick = { onNavigate(item.destination) },
-                icon = {
-                    Icon(
-                        painter = painterResource(item.iconRes),
-                        contentDescription = stringResource(item.labelRes),
+            val selected =
+                current == item.destination ||
+                    (current == CarDestination.DISLIKED && item.destination == CarDestination.MORE)
+            val shape = RoundedCornerShape(cornerRadius)
+            val backgroundBrush =
+                if (selected) {
+                    Brush.linearGradient(
+                        colors =
+                            listOf(
+                                Color(0xFFD9B9FF),
+                                Color(0xFFA66AF0),
+                                Color(0xFF5F1A9B),
+                            ),
                     )
-                },
-                label = { Text(stringResource(item.labelRes)) },
-                modifier = Modifier.height(viewport.pxToDp(CarDesignTokens.StandardTrackRowHeightPx, density)),
-            )
+                } else {
+                    Brush.linearGradient(
+                        colors =
+                            listOf(
+                                Color(0xFF353B43),
+                                Color(0xFF20252B),
+                                Color(0xFF161A1F),
+                            ),
+                    )
+                }
+            val borderColor =
+                if (selected) {
+                    Color(0xFFE8D4FF).copy(alpha = 0.72f)
+                } else {
+                    Color(0xFF59616C).copy(alpha = 0.48f)
+                }
+
+            Box(
+                modifier =
+                    Modifier
+                        .size(itemSize)
+                        .shadow(
+                            elevation = if (selected) activeShadow else inactiveShadow,
+                            shape = shape,
+                            clip = false,
+                        )
+                        .clip(shape)
+                        .background(backgroundBrush)
+                        .border(
+                            width = borderWidth,
+                            color = borderColor,
+                            shape = shape,
+                        )
+                        .clickable { onNavigate(item.destination) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(item.iconRes),
+                    contentDescription = stringResource(item.labelRes),
+                    modifier = Modifier.size(iconSize),
+                    tint = if (selected) Color(0xFFFAF4FF) else Color(0xFFF1F3F6),
+                )
+            }
         }
     }
 }

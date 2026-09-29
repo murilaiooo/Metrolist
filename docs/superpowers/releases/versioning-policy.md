@@ -1,13 +1,14 @@
 # MetroList Product Versioning Policy
 
 Effective: 2026-09-27
+Updated: 2026-09-28
 
 ## Product tracks
 
-MetroList Windows and the future MetroList Car APK use independent semantic versions.
+MetroList Windows and MetroList Car use independent semantic versions.
 
-- Windows current line: `0.2.x`
-- Car APK: starts its own version line when the first car build exists.
+- Windows current line: `0.3.x`
+- Car current line: `0.4.x`.
 - Do not reuse the upstream Android app's `13.x` version as the Windows or Car product version.
 
 ## Semantic versioning
@@ -40,7 +41,7 @@ Visible location:
 
 ## Car APK requirement
 
-When the car application is implemented:
+For the Car application:
 - define one tracked Car version source of truth;
 - use it for APK `versionName`, in-app display, and diagnostic/error reports;
 - show the version in a discreet persistent/About/Settings location reachable from the car UI;

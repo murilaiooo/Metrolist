@@ -27,7 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -104,8 +103,29 @@ fun CarNowPlayingScreen(
     val dislikedSongIds by dislikeRepository.activeSongIds.collectAsStateWithLifecycle()
 
     var positionMs by remember(metadata?.id) { mutableLongStateOf(0L) }
+    var audioSignal by remember(metadata?.id) { mutableFloatStateOf(0f) }
     var seeking by remember { mutableStateOf(false) }
     var showQueue by remember { mutableStateOf(false) }
+
+    LaunchedEffect(connection, isPlaying, metadata?.id) {
+        val activeConnection = connection
+        if (!isPlaying || activeConnection == null) {
+            activeConnection?.setAudioSignalTrackingEnabled(false)
+            audioSignal = 0f
+            return@LaunchedEffect
+        }
+
+        activeConnection.setAudioSignalTrackingEnabled(true)
+        try {
+            while (true) {
+                audioSignal = runCatching(activeConnection::currentAudioSignalLevel).getOrDefault(0f)
+                delay(80L)
+            }
+        } finally {
+            activeConnection.setAudioSignalTrackingEnabled(false)
+            audioSignal = 0f
+        }
+    }
 
     LaunchedEffect(connection, metadata?.id) {
         while (true) {
@@ -121,6 +141,7 @@ fun CarNowPlayingScreen(
             connection?.player?.duration
                 ?.takeIf { it != C.TIME_UNSET && it > 0L }
         }.getOrNull() ?: ((metadata?.duration ?: 0).coerceAtLeast(0) * 1000L)
+    val seekPalette = rememberCarSeekPalette(metadata?.id, metadata?.thumbnailUrl)
 
     val layout = CarNowPlayingLayoutMetrics.forViewport(viewport)
     val horizontalPadding = (layout.horizontalPaddingPx / density).dp
@@ -171,8 +192,12 @@ fun CarNowPlayingScreen(
 
             Spacer(Modifier.height(viewport.pxToDp(18f, density)))
 
-            Slider(
+            CarReactiveSeekBar(
                 value = positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L)).toFloat(),
+                valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
+                enabled = metadata != null && durationMs > 0L,
+                palette = seekPalette,
+                audioLevel = audioSignal,
                 onValueChange = {
                     seeking = true
                     positionMs = it.toLong()
@@ -181,8 +206,6 @@ fun CarNowPlayingScreen(
                     connection?.seekTo(positionMs)
                     seeking = false
                 },
-                valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
-                enabled = metadata != null && durationMs > 0L,
                 modifier = Modifier.fillMaxWidth(),
             )
 

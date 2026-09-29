@@ -1,5 +1,37 @@
 # MetroList Car Release History
 
+## 0.4.0 — 2026-09-28
+
+Status: production-signed release APK built, signature-verified, installed, and AVD-smoked; source commit authorized for local `main`, with no push/merge authorization.
+
+Changes:
+- replaced the stock navigation rail presentation with the user-approved compact rounded-square automotive controls and refined active-state treatment;
+- added the user-approved reactive seek bar with artwork-derived gradient, larger touch thumb, subtle glow, and audio-responsive energy;
+- made audio signal metering opt-in and lifecycle-bound so per-sample tracking stops when playback pauses or Now Playing leaves composition;
+- kept the approved Now Playing composition, playback/data contracts, and Windows interoperability unchanged.
+
+Housekeeping:
+- moved ignored JVM crash diagnostics out of the repository root into `.superpowers/diagnostics/jvm-crashes/` without deleting diagnostic evidence;
+- preserved the local `.metrolistbackup` user file unchanged and did not import any backup or Car Library during acceptance;
+- refreshed the versioning policy and established a new current handoff so historical 0.3.0/earlier handoffs are not mistaken for current state.
+
+Verification:
+- `git diff --check`: PASS;
+- Car tests + assemble: PASS;
+- Foss tests + assemble: PASS;
+- GMS tests + assemble: PASS;
+- Izzy first attempt: Gradle daemon/JVM native `EXCEPTION_ACCESS_VIOLATION` in `jvm.dll` GC thread before product gate; rerun in a fresh single-use Zulu JVM: PASS;
+- Windows `desktop-core`, `desktop-export`, `desktop-app` tests + `createDistributable`: PASS;
+- production `:app:assembleCarRelease` with R8/minify, resource shrink, and release signing: PASS;
+- exact signed release APK install + launch on `MetroList_Car_API29`: PASS;
+- release viewport checks: 800x480 = 0 overflow, 1024x600 = 0 overflow, 1280x720 = 0 overflow; AVD restored to 1024x600 @ 160 dpi;
+- release package identity: applicationId `com.metrolist.music.car`, versionName `0.4.0`, versionCode `4000`;
+- release APK size: 23,247,763 bytes;
+- release APK SHA-256: `a9ac4c5a89d97a8cc4fc7229e47e4845e78cfdeae44d84880d75898069677b23`;
+- APK Signature Scheme v2: PASS; signer certificate SHA-256 `1323debbc967612f305d55b8c7261d0b821b56ff02967ba18d07d1e403bd0e43`.
+
+See `docs/superpowers/reviews/2026-09-28-metrolist-car-0.4.0-housekeeping-acceptance.md` for final evidence and `docs/superpowers/handoffs/2026-09-28-metrolist-car-0.4.0-current-handoff.md` for the current continuation point.
+
 ## 0.3.0 — 2026-09-28
 
 Status: AVD acceptance complete; MetroList Car 0.3.0 packaged, identity-verified, and installed successfully on the primary 2 GB AVD.

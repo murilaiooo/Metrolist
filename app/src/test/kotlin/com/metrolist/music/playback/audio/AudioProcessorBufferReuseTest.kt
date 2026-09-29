@@ -12,12 +12,51 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioProcessorBufferReuseTest {
     @Test
     fun `volume normalization reuses its direct output buffer`() {
         assertOutputBufferIsReused(VolumeNormalizationAudioProcessor())
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `volume normalization exposes a decaying pcm signal level`() {
+        val processor = VolumeNormalizationAudioProcessor()
+        processor.configure(INPUT_FORMAT)
+        processor.flush()
+        processor.signalTrackingEnabled = true
+
+        processor.queueInput(constantPcmBuffer(24_000))
+        processor.output.position(processor.output.limit())
+        val loudLevel = processor.signalLevel
+
+        repeat(8) {
+            processor.queueInput(constantPcmBuffer(0))
+            processor.output.position(processor.output.limit())
+        }
+
+        assertTrue(loudLevel > 0.4f)
+        assertTrue(processor.signalLevel < loudLevel)
+    }
+
+    @Suppress("DEPRECATION")
+    @Test
+    fun `disabling volume normalization signal tracking clears the exposed level`() {
+        val processor = VolumeNormalizationAudioProcessor()
+        processor.configure(INPUT_FORMAT)
+        processor.flush()
+        processor.signalTrackingEnabled = true
+
+        processor.queueInput(constantPcmBuffer(24_000))
+        processor.output.position(processor.output.limit())
+        assertTrue(processor.signalLevel > 0f)
+
+        processor.signalTrackingEnabled = false
+
+        assertTrue(processor.signalLevel == 0f)
     }
 
     @Test
@@ -51,6 +90,14 @@ class AudioProcessorBufferReuseTest {
             .order(ByteOrder.nativeOrder())
             .apply {
                 repeat(BUFFER_SIZE / Short.SIZE_BYTES) { putShort(it.toShort()) }
+                flip()
+            }
+
+    private fun constantPcmBuffer(sample: Int): ByteBuffer =
+        ByteBuffer.allocateDirect(BUFFER_SIZE)
+            .order(ByteOrder.nativeOrder())
+            .apply {
+                repeat(BUFFER_SIZE / Short.SIZE_BYTES) { putShort(sample.toShort()) }
                 flip()
             }
 

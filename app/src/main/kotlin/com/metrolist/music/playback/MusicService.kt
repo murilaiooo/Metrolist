@@ -425,6 +425,19 @@ class MusicService :
     private val playerNormalizationProcessors = HashMap<Player, VolumeNormalizationAudioProcessor>()
     private val playerEqualizerProcessors = HashMap<Player, CustomEqualizerAudioProcessor>()
 
+    internal fun setAudioSignalTrackingEnabled(enabled: Boolean) {
+        _playerFlow.value
+            ?.let(playerNormalizationProcessors::get)
+            ?.let { it.signalTrackingEnabled = enabled }
+    }
+
+    internal fun currentAudioSignalLevel(): Float =
+        _playerFlow.value
+            ?.let(playerNormalizationProcessors::get)
+            ?.signalLevel
+            ?.coerceIn(0f, 1f)
+            ?: 0f
+
     private var loudnessSetupJob: Job? = null
     private var loudnessSetupGeneration: Long = 0L
 
