@@ -13,14 +13,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -31,20 +38,31 @@ import com.metrolist.music.BuildConfig
 import com.metrolist.music.R
 import com.metrolist.music.car.diagnostics.CarDiagnosticsSnapshot
 import com.metrolist.music.car.feedback.CarOperationState
+import com.metrolist.music.car.importer.CarArtworkStore
 import com.metrolist.music.car.importer.CarImportRepository
 import com.metrolist.music.car.importer.CarImportStatus
+import com.metrolist.music.car.importer.CarLegacyImportProvenanceStore
 import com.metrolist.music.car.input.CarInputDiagnostics
 import com.metrolist.music.car.library.CarLibrarySession
 import com.metrolist.music.car.library.CarSongSourceKind
 import com.metrolist.music.car.library.CarUnifiedSong
+import com.metrolist.music.car.loudness.CarLoudnessProgress
 import com.metrolist.music.car.service.CarImportService
 import com.metrolist.music.car.ui.component.CarOperationPanel
+import com.metrolist.music.constants.CarLoudnessModeKey
 import com.metrolist.music.constants.SongSortType
 import com.metrolist.music.db.MusicDatabase
+import com.metrolist.music.playback.loudness.CarLoudnessMode
 import com.metrolist.music.playback.DownloadUtil
+import com.metrolist.music.playback.PlayerConnection
+import com.metrolist.music.utils.rememberEnumPreference
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CarMoreScreen(
+    connection: PlayerConnection?,
     database: MusicDatabase,
     downloadUtil: DownloadUtil,
     importRepository: CarImportRepository,
@@ -53,10 +71,23 @@ fun CarMoreScreen(
     catalog: List<CarUnifiedSong>,
     viewport: CarViewportMetrics,
     dislikedCount: Int,
+    loudnessProgress: CarLoudnessProgress,
     onOpenDisliked: () -> Unit,
 ) {
     val context = LocalContext.current
+    val appContext = context.applicationContext
     val density = LocalDensity.current.density
+    val scope = rememberCoroutineScope()
+    val artworkStore = remember(appContext) { CarArtworkStore(appContext.filesDir) }
+    val provenanceStore = remember(appContext) { CarLegacyImportProvenanceStore(appContext) }
+    var showDeleteAllConfirmation by remember { mutableStateOf(false) }
+    val (loudnessMode, onLoudnessModeChange) =
+        rememberEnumPreference(
+            key = CarLoudnessModeKey,
+            defaultValue = CarLoudnessMode.HIGH,
+        )
+    var isDeletingAll by remember { mutableStateOf(false) }
+    var deleteAllSummary by remember { mutableStateOf<String?>(null) }
     val downloaded by
         database
             .downloadedSongs(
@@ -194,6 +225,110 @@ fun CarMoreScreen(
                 verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(10f, density)),
             ) {
                 Text(
+                    text = stringResource(R.string.car_loudness_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = stringResource(R.string.car_loudness_desc),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                    horizontalArrangement =
+                        Arrangement.spacedBy(viewport.pxToDp(8f, density)),
+                ) {
+                    CarLoudnessMode.entries.forEach { mode ->
+                        val label =
+                            when (mode) {
+                                CarLoudnessMode.OFF -> R.string.car_loudness_off
+                                CarLoudnessMode.LOW -> R.string.car_loudness_low
+                                CarLoudnessMode.MEDIUM -> R.string.car_loudness_medium
+                                CarLoudnessMode.HIGH -> R.string.car_loudness_high
+                            }
+                        if (mode == loudnessMode) {
+                            Button(
+                                onClick = { onLoudnessModeChange(mode) },
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .sizeIn(minHeight = viewport.pxToDp(52f, density)),
+                            ) {
+                                Text(stringResource(label))
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = { onLoudnessModeChange(mode) },
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .sizeIn(minHeight = viewport.pxToDp(52f, density)),
+                            ) {
+                                Text(stringResource(label))
+                            }
+                        }
+                    }
+                }
+
+                when {
+                    loudnessProgress.total <= 0 ->
+                        Text(
+                            text = stringResource(R.string.car_loudness_no_library),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    else -> {
+                        Text(
+                            text =
+                                stringResource(
+                                    R.string.car_loudness_progress,
+                                    loudnessProgress.analyzed,
+                                    loudnessProgress.total,
+                                ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text =
+                                when {
+                                    loudnessProgress.running ->
+                                        stringResource(
+                                            R.string.car_loudness_running,
+                                            loudnessProgress.pending,
+                                        )
+                                    loudnessProgress.pending == 0 ->
+                                        stringResource(R.string.car_loudness_complete)
+                                    loudnessProgress.pausedReason != null ->
+                                        loudnessProgress.pausedReason
+                                    else ->
+                                        stringResource(
+                                            R.string.car_loudness_pending,
+                                            loudnessProgress.pending,
+                                        )
+                                },
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (loudnessProgress.failed > 0) {
+                            Text(
+                                text =
+                                    stringResource(
+                                        R.string.car_loudness_failed,
+                                        loudnessProgress.failed,
+                                    ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = viewport.pxToDp(2f, density),
+        ) {
+            Column(
+                modifier = Modifier.padding(viewport.pxToDp(20f, density)),
+                verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(10f, density)),
+            ) {
+                Text(
                     text = stringResource(R.string.car_import_status),
                     style = MaterialTheme.typography.titleLarge,
                 )
@@ -255,6 +390,56 @@ fun CarMoreScreen(
 
         HorizontalDivider()
 
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = viewport.pxToDp(2f, density),
+        ) {
+            Column(
+                modifier = Modifier.padding(viewport.pxToDp(20f, density)),
+                verticalArrangement = Arrangement.spacedBy(viewport.pxToDp(10f, density)),
+            ) {
+                Text(
+                    text = stringResource(R.string.car_storage_reset_title),
+                    style = MaterialTheme.typography.titleLarge,
+                )
+                Text(
+                    text = stringResource(R.string.car_storage_reset_desc),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Button(
+                    onClick = { showDeleteAllConfirmation = true },
+                    enabled = !isDeletingAll && importStatus !is CarImportStatus.Running,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                    modifier =
+                        Modifier.sizeIn(
+                            minHeight = viewport.pxToDp(60f, density),
+                        ),
+                ) {
+                    Text(
+                        if (isDeletingAll) {
+                            stringResource(R.string.car_delete_all_music_progress)
+                        } else {
+                            stringResource(R.string.car_delete_all_music)
+                        },
+                    )
+                }
+                deleteAllSummary?.let { summary ->
+                    Text(
+                        text = summary,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        HorizontalDivider()
+
         Text(
             text = stringResource(R.string.car_diagnostics),
             style = MaterialTheme.typography.titleLarge,
@@ -269,6 +454,88 @@ fun CarMoreScreen(
                 style = MaterialTheme.typography.bodyLarge,
             )
         }
+    }
+
+    if (showDeleteAllConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllConfirmation = false },
+            title = {
+                Text(stringResource(R.string.car_delete_all_music_title))
+            },
+            text = {
+                Text(
+                    context.getString(
+                        R.string.car_delete_all_music_message,
+                        downloaded.size,
+                        carLibraryIndex?.songs?.size ?: 0,
+                    ),
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteAllConfirmation = false
+                        isDeletingAll = true
+                        deleteAllSummary = null
+
+                        runCatching {
+                            connection?.player?.stop()
+                            connection?.player?.clearMediaItems()
+                        }
+
+                        val managedSongIds = downloaded.map { it.id }.distinct()
+                        scope.launch {
+                            val result =
+                                withContext(Dispatchers.IO) {
+                                    runCatching {
+                                        managedSongIds.forEach { songId ->
+                                            downloadUtil.downloadManager.removeDownload(songId)
+                                            downloadUtil.downloadCache.removeResource(songId)
+                                            downloadUtil.playerCache.removeResource(songId)
+                                            database.updateDownloadedInfo(songId, false, null)
+                                            artworkStore.delete(songId)
+                                        }
+                                        downloadUtil.downloadCache.keys
+                                            .toList()
+                                            .forEach(downloadUtil.downloadCache::removeResource)
+                                        downloadUtil.playerCache.keys
+                                            .toList()
+                                            .forEach(downloadUtil.playerCache::removeResource)
+                                        provenanceStore.clear()
+                                        importRepository.reset()
+                                        carLibrarySession.disconnect()
+                                        managedSongIds.size
+                                    }
+                                }
+
+                            isDeletingAll = false
+                            deleteAllSummary =
+                                result.fold(
+                                    onSuccess = { removed ->
+                                        context.getString(
+                                            R.string.car_delete_all_music_done,
+                                            removed,
+                                        )
+                                    },
+                                    onFailure = { error ->
+                                        context.getString(
+                                            R.string.car_delete_all_music_failed,
+                                            error.message ?: error::class.java.simpleName,
+                                        )
+                                    },
+                                )
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.car_delete_all_music_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllConfirmation = false }) {
+                    Text(stringResource(R.string.car_delete_all_music_cancel))
+                }
+            },
+        )
     }
 }
 

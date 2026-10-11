@@ -24,6 +24,11 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.audiofx.AudioEffect
 import com.metrolist.music.playback.audio.VolumeNormalizationAudioProcessor
+import com.metrolist.music.playback.loudness.CAR_LOUDNESS_FINGERPRINT_EXTRA
+import com.metrolist.music.playback.loudness.CarLoudnessMode
+import com.metrolist.music.playback.loudness.CarLoudnessStore
+import com.metrolist.music.playback.loudness.TARGET_LUFS
+import com.metrolist.music.playback.loudness.carNormalizationGainMb
 import com.metrolist.music.utils.safeDataStoreEdit
 import android.net.ConnectivityManager
 import android.os.Binder
@@ -105,6 +110,7 @@ import com.metrolist.music.constants.AddToPlaylistPosition
 import com.metrolist.music.constants.AddToPlaylistPositionKey
 import com.metrolist.music.constants.AndroidAutoTargetPlaylistKey
 import com.metrolist.music.constants.AudioNormalizationKey
+import com.metrolist.music.constants.CarLoudnessModeKey
 import com.metrolist.music.constants.AudioOffload
 import com.metrolist.music.constants.AudioQualityKey
 import com.metrolist.music.constants.AudioTrackPlaybackParamsKey
@@ -446,6 +452,15 @@ class MusicService :
 
     @Volatile
     private var loudnessLevelCached: LoudnessLevel = LoudnessLevel.BALANCED
+
+    @Volatile
+    private var carLoudnessModeCached: CarLoudnessMode = CarLoudnessMode.HIGH
+
+    private val carLoudnessStoreDelegate =
+        lazy(LazyThreadSafetyMode.NONE) {
+            CarLoudnessStore(applicationContext)
+        }
+    private val carLoudnessStore by carLoudnessStoreDelegate
 
     private var cachedNormalizationMediaId: String? = null
     private var cachedNormalizationGainMb: Int? = null
@@ -930,20 +945,36 @@ class MusicService :
                 }
             }
 
-        combine(
-            currentFormat,
-            dataStore.data
-                .map { it[AudioNormalizationKey] ?: true }
-                .distinctUntilChanged(),
-            dataStore.data
-                .map { prefs -> prefs[LoudnessLevelKey].toEnum(LoudnessLevel.BALANCED) }
-                .distinctUntilChanged(),
-        ) { format, normalizeAudio, loudnessLevel ->
-            Triple(format, normalizeAudio, loudnessLevel)
-        }.collectLatest(scope) { (_, normalizeAudio, loudnessLevel) ->
-            normalizationEnabledCached = normalizeAudio
-            loudnessLevelCached = loudnessLevel
-            setupAudioNormalization()
+        if (BuildConfig.IS_CAR) {
+            combine(
+                currentFormat,
+                dataStore.data
+                    .map { prefs ->
+                        prefs[CarLoudnessModeKey].toEnum(CarLoudnessMode.HIGH)
+                    }
+                    .distinctUntilChanged(),
+            ) { _, mode -> mode }
+                .collectLatest(scope) { mode ->
+                    carLoudnessModeCached = mode
+                    normalizationEnabledCached = mode != CarLoudnessMode.OFF
+                    setupAudioNormalization()
+                }
+        } else {
+            combine(
+                currentFormat,
+                dataStore.data
+                    .map { it[AudioNormalizationKey] ?: true }
+                    .distinctUntilChanged(),
+                dataStore.data
+                    .map { prefs -> prefs[LoudnessLevelKey].toEnum(LoudnessLevel.BALANCED) }
+                    .distinctUntilChanged(),
+            ) { format, normalizeAudio, loudnessLevel ->
+                Triple(format, normalizeAudio, loudnessLevel)
+            }.collectLatest(scope) { (_, normalizeAudio, loudnessLevel) ->
+                normalizationEnabledCached = normalizeAudio
+                loudnessLevelCached = loudnessLevel
+                setupAudioNormalization()
+            }
         }
 
         combine(
@@ -2269,12 +2300,20 @@ class MusicService :
 
     private fun seedLoudnessCacheFromPrefs() {
         val prefs = startupPrefs!!
-        normalizationEnabledCached = prefs[AudioNormalizationKey] ?: true
-        loudnessLevelCached = prefs[LoudnessLevelKey].toEnum(LoudnessLevel.BALANCED)
-
-        Timber.tag(TAG).d(
-            "Seeded loudness cache: normalization=$normalizationEnabledCached, level=$loudnessLevelCached"
-        )
+        if (BuildConfig.IS_CAR) {
+            carLoudnessModeCached =
+                prefs[CarLoudnessModeKey].toEnum(CarLoudnessMode.HIGH)
+            normalizationEnabledCached = carLoudnessModeCached != CarLoudnessMode.OFF
+            Timber.tag(TAG).d(
+                "Seeded Car loudness cache: mode=$carLoudnessModeCached",
+            )
+        } else {
+            normalizationEnabledCached = prefs[AudioNormalizationKey] ?: true
+            loudnessLevelCached = prefs[LoudnessLevelKey].toEnum(LoudnessLevel.BALANCED)
+            Timber.tag(TAG).d(
+                "Seeded loudness cache: normalization=$normalizationEnabledCached, level=$loudnessLevelCached",
+            )
+        }
     }
 
     private fun applyCachedAudioNormalizationNow() {
@@ -2306,13 +2345,39 @@ class MusicService :
     ) {
         val gain =
             if (normalizationEnabledCached) {
-                normalizationGainMb(loudnessDb, perceptualLoudnessDb, loudnessLevelCached.targetLufs)
+                if (BuildConfig.IS_CAR) {
+                    carFallbackNormalizationGainMb(
+                        loudnessDb = loudnessDb,
+                        perceptualLoudnessDb = perceptualLoudnessDb,
+                        mode = carLoudnessModeCached,
+                    )
+                } else {
+                    normalizationGainMb(
+                        loudnessDb,
+                        perceptualLoudnessDb,
+                        loudnessLevelCached.targetLufs,
+                    )
+                }
             } else {
                 null
             }
 
-        if (gain != null) {
-            processor.setTargetGain(gain)
+        applyNormalizationGain(
+            processor = processor,
+            mediaId = mediaId,
+            gainMb = gain,
+            updateCache = updateCache,
+        )
+    }
+
+    private fun applyNormalizationGain(
+        processor: VolumeNormalizationAudioProcessor,
+        mediaId: String,
+        gainMb: Int?,
+        updateCache: Boolean,
+    ) {
+        if (gainMb != null) {
+            processor.setTargetGain(gainMb)
             processor.enabled = true
         } else {
             processor.setTargetGain(0)
@@ -2321,8 +2386,8 @@ class MusicService :
 
         if (updateCache) {
             cachedNormalizationMediaId = mediaId
-            cachedNormalizationGainMb = gain
-            cachedNormalizationEnabled = gain != null
+            cachedNormalizationGainMb = gainMb
+            cachedNormalizationEnabled = gainMb != null
         }
     }
 
@@ -2370,25 +2435,51 @@ class MusicService :
 
         loudnessSetupJob = scope.launch {
             try {
-                val currentMediaId = withContext(Dispatchers.Main) {
-                    player.currentMediaItem?.mediaId
+                val currentItem = withContext(Dispatchers.Main) {
+                    player.currentMediaItem
                 }
-
+                val currentMediaId = currentItem?.mediaId
+                val fingerprint =
+                    currentItem
+                        ?.mediaMetadata
+                        ?.extras
+                        ?.getString(CAR_LOUDNESS_FINGERPRINT_EXTRA)
                 val normalizeAudio = normalizationEnabledCached
 
                 if (normalizeAudio && currentMediaId != null) {
-                    val format = withContext(Dispatchers.IO) {
-                        database.format(currentMediaId).first()
-                    }
+                    val (format, localMeasurement) =
+                        withContext(Dispatchers.IO) {
+                            val storedFormat = database.format(currentMediaId).first()
+                            val measurement =
+                                if (BuildConfig.IS_CAR && fingerprint != null) {
+                                    carLoudnessStore.measurement(currentMediaId, fingerprint)
+                                } else {
+                                    null
+                                }
+                            storedFormat to measurement
+                        }
 
-                    Timber.tag(TAG).d("Audio normalization enabled: $normalizeAudio")
+                    Timber.tag(TAG).d(
+                        "Audio normalization enabled: $normalizeAudio, carMeasurement=${localMeasurement != null}",
+                    )
 
                     withContext(Dispatchers.Main) {
                         if (!isActive || requestGeneration != loudnessSetupGeneration) return@withContext
                         if (player.currentMediaItem?.mediaId != currentMediaId) return@withContext
 
                         val processor = playerNormalizationProcessors[player] ?: return@withContext
-                        if (format != null || cachedNormalizationMediaId != currentMediaId) {
+                        if (BuildConfig.IS_CAR && localMeasurement != null) {
+                            applyNormalizationGain(
+                                processor = processor,
+                                mediaId = currentMediaId,
+                                gainMb =
+                                    carNormalizationGainMb(
+                                        measurement = localMeasurement,
+                                        mode = carLoudnessModeCached,
+                                    ),
+                                updateCache = true,
+                            )
+                        } else if (format != null || cachedNormalizationMediaId != currentMediaId) {
                             applyAudioNormalization(
                                 processor = processor,
                                 mediaId = currentMediaId,
@@ -4293,6 +4384,9 @@ class MusicService :
                 scope.cancel()
             } catch (_: Exception) {
             }
+            if (carLoudnessStoreDelegate.isInitialized()) {
+                runCatching { carLoudnessStore.close() }
+            }
             super.onDestroy()
             shutdownDeferred.complete(Unit)
             return
@@ -4345,6 +4439,9 @@ class MusicService :
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controllerFuture = null
         releaseExoPlayer(player)
+        if (carLoudnessStoreDelegate.isInitialized()) {
+            runCatching { carLoudnessStore.close() }
+        }
         scope.cancel()
         super.onDestroy()
         shutdownDeferred.complete(Unit)
@@ -5070,4 +5167,21 @@ internal fun normalizationGainMb(
     return measuredLufs
         ?.let { (-(it - targetLufs) * 100.0).toInt() }
         ?.coerceIn(-1500, 300)
+}
+
+internal fun carFallbackNormalizationGainMb(
+    loudnessDb: Double?,
+    perceptualLoudnessDb: Double?,
+    mode: CarLoudnessMode,
+): Int? {
+    if (mode == CarLoudnessMode.OFF) return null
+
+    val measuredLufs =
+        perceptualLoudnessDb
+            ?: loudnessDb?.let { it + LoudnessLevel.AGGRESSIVE.targetLufs }
+            ?: return null
+    val requestedDb =
+        (TARGET_LUFS - measuredLufs) * mode.correctionStrength
+    val safeDb = requestedDb.coerceAtMost(0.0).coerceAtLeast(-15.0)
+    return (safeDb * 100.0).toInt()
 }

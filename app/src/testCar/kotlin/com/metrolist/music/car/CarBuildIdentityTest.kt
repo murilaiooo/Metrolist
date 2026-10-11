@@ -9,8 +9,8 @@ class CarBuildIdentityTest {
     @Test
     fun carBuildHasIndependentIdentity() {
         assertTrue(BuildConfig.IS_CAR)
-        assertEquals("0.4.0", BuildConfig.VERSION_NAME)
-        assertEquals(4000, BuildConfig.VERSION_CODE)
+        assertEquals("0.4.2", BuildConfig.VERSION_NAME)
+        assertEquals(4002, BuildConfig.VERSION_CODE)
         assertEquals("com.metrolist.music.car.debug", BuildConfig.APPLICATION_ID)
     }
 }

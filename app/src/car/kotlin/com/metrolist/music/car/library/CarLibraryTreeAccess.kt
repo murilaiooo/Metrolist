@@ -18,6 +18,11 @@ sealed interface CarLibraryLocation {
     ) : CarLibraryLocation
 }
 
+data class CarLibraryEntry(
+    val locator: String,
+    val size: Long?,
+)
+
 interface CarLibraryTreeAccess {
     val location: CarLibraryLocation
 
@@ -28,6 +33,14 @@ interface CarLibraryTreeAccess {
     fun locator(relativePath: String): String
 
     fun size(relativePath: String): Long? = null
+
+    fun entry(relativePath: String): CarLibraryEntry? {
+        if (!exists(relativePath)) return null
+        return CarLibraryEntry(
+            locator = locator(relativePath),
+            size = size(relativePath),
+        )
+    }
 
     fun invalidateCaches() = Unit
 }
@@ -40,6 +53,8 @@ interface CarLibraryLocationStore {
     fun load(): CarLibraryLocation?
 
     fun save(location: CarLibraryLocation)
+
+    fun clear() = Unit
 }
 
 class SharedPreferencesCarLibraryLocationStore(
@@ -67,6 +82,13 @@ class SharedPreferencesCarLibraryLocationStore(
         preferences.edit()
             .putString(KEY_TYPE, type)
             .putString(KEY_VALUE, value)
+            .apply()
+    }
+
+    override fun clear() {
+        preferences.edit()
+            .remove(KEY_TYPE)
+            .remove(KEY_VALUE)
             .apply()
     }
 
@@ -103,6 +125,15 @@ class FileCarLibraryTreeAccess(
         val path = resolve(relativePath)
         if (!Files.isRegularFile(path)) return null
         return runCatching { Files.size(path) }.getOrNull()
+    }
+
+    override fun entry(relativePath: String): CarLibraryEntry? {
+        val path = resolve(relativePath)
+        if (!Files.isRegularFile(path)) return null
+        return CarLibraryEntry(
+            locator = path.toUri().toString(),
+            size = runCatching { Files.size(path) }.getOrNull(),
+        )
     }
 
     private fun resolve(relativePath: String): Path {
@@ -171,6 +202,14 @@ class ContentTreeCarLibraryTreeAccess(
 
     override fun size(relativePath: String): Long? =
         resolveDocument(relativePath)?.size
+
+    override fun entry(relativePath: String): CarLibraryEntry? =
+        resolveDocument(relativePath)?.let { entry ->
+            CarLibraryEntry(
+                locator = entry.uri.toString(),
+                size = entry.size,
+            )
+        }
 
     override fun invalidateCaches() {
         childrenCache.clear()

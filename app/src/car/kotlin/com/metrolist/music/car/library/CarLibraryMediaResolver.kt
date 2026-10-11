@@ -1,6 +1,8 @@
 package com.metrolist.music.car.library
 
+import android.os.Bundle
 import androidx.media3.common.MediaItem
+import com.metrolist.music.playback.loudness.CAR_LOUDNESS_FINGERPRINT_EXTRA
 import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.models.MediaMetadata
 import com.metrolist.music.playback.queues.ListQueue
@@ -42,19 +44,32 @@ class CarLibraryMediaResolver(
                     reason = availability.reason,
                 )
 
-            is CarLibraryTrackAvailability.Available ->
+            is CarLibraryTrackAvailability.Available -> {
+                val baseItem =
+                    availability.song
+                        .toMediaMetadata(
+                            artworkResolver.resolve(
+                                carLibraryArtwork = availability.artworkLocator,
+                                legacyArtwork = legacyArtworkLocator(availability.song.id),
+                                remoteArtwork = remoteArtworkLocator(availability.song),
+                            ),
+                        )
+                        .toMediaItem()
+                val extras =
+                    Bundle(baseItem.mediaMetadata.extras ?: Bundle()).apply {
+                        putString(CAR_LOUDNESS_FINGERPRINT_EXTRA, availability.song.sha256)
+                    }
+
                 CarLibraryMediaResolution.Ready(
                     mediaItem =
-                        availability.song
-                            .toMediaMetadata(
-                                artworkResolver.resolve(
-                                    carLibraryArtwork = availability.artworkLocator,
-                                    legacyArtwork = legacyArtworkLocator(availability.song.id),
-                                    remoteArtwork = remoteArtworkLocator(availability.song),
-                                ),
-                            )
-                            .toMediaItem()
+                        baseItem
                             .buildUpon()
+                            .setMediaMetadata(
+                                baseItem.mediaMetadata
+                                    .buildUpon()
+                                    .setExtras(extras)
+                                    .build(),
+                            )
                             .setUri(availability.locator)
                             .setCustomCacheKey(
                                 "car-library:" +
@@ -64,6 +79,7 @@ class CarLibraryMediaResolver(
                             )
                             .build(),
                 )
+            }
         }
 
     fun resolveQueue(

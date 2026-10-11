@@ -416,13 +416,19 @@ internal fun DownloadsView(
                         contentDescription = null,
                     )
                     Spacer(Modifier.width(6.dp))
-                    Text(if (carLibraryExportRunning) "Exporting..." else "Export Car Library")
+                    Text(
+                        if (carLibraryExportRunning) {
+                            "Updating Car Library..."
+                        } else {
+                            "Export / Update Car Library"
+                        },
+                    )
                 }
                 OutlinedButton(
                     onClick = ::chooseAndPrepareExport,
                     enabled = completed > 0 && !exportRunning && !carLibraryExportRunning,
                 ) {
-                    Text("Backup file")
+                    Text("Legacy backup file")
                 }
             }
         }

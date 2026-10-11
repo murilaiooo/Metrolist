@@ -11,6 +11,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
 
 private const val MIN_HQ_EDGE = 1000
@@ -78,6 +79,8 @@ class ArtworkCache(
     private val directory: Path,
     private val fetch: (String) -> ByteArray = ::fetchHttp,
 ) {
+    private val ensureLocks = ConcurrentHashMap<String, Any>()
+
     fun cachedPath(thumbnailUrl: String?): Path? {
         val url = normalize(thumbnailUrl) ?: return null
         val target = directory.resolve(ArtworkKey.fileName(url))
@@ -88,12 +91,16 @@ class ArtworkCache(
 
     fun ensure(thumbnailUrl: String?): Path? {
         val originalUrl = normalize(thumbnailUrl) ?: return null
+        val lock = ensureLocks.computeIfAbsent(originalUrl) { Any() }
+        return synchronized(lock) {
+            ensureLocked(originalUrl)
+        }
+    }
+
+    private fun ensureLocked(originalUrl: String): Path? {
         val candidates = highQualityArtworkCandidates(originalUrl)
         val existing = cachedPath(originalUrl)
         val existingDimensions = existing?.let(::imageDimensions)
-        val existingArea =
-            existingDimensions?.let { (width, height) -> width.toLong() * height.toLong() }
-                ?: -1L
 
         if (
             existing != null &&

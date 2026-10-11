@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="car_loudness_title">Volume normalization</string>
+    <string name="car_loudness_desc">Balances perceived loudness between tracks without compression. High is recommended for mixed playlists on the road.</string>
+    <string name="car_loudness_off">Off</string>
+    <string name="car_loudness_low">Low</string>
+    <string name="car_loudness_medium">Medium</string>
+    <string name="car_loudness_high">High</string>
+    <string name="car_loudness_progress">%1$d of %2$d tracks analyzed</string>
+    <string name="car_loudness_running">Analyzing in background · %1$d remaining</string>
+    <string name="car_loudness_pending">Analysis will continue automatically · %1$d remaining</string>
+    <string name="car_loudness_complete">Library analysis complete</string>
+    <string name="car_loudness_failed">%1$d tracks could not be analyzed and were skipped</string>
+    <string name="car_loudness_no_library">Select a Car Library to start background analysis.</string>
+</resources>

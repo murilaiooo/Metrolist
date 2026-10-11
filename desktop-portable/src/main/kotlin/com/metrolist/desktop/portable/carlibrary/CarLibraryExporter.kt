@@ -77,6 +77,8 @@ class CarLibraryExporter(
         Files.createDirectories(root.resolve(ARTWORK_ROOT))
 
         val previous = readExistingManifest(root)
+        val previousSongsById = previous?.songs?.associateBy(CarLibrarySong::id).orEmpty()
+        val preparedFiles = mutableMapOf<String, CopyOutcome>()
         val libraryId = previous?.libraryId ?: nextIdentity("library ID")
         val revision = nextIdentity("library revision")
         require(revision != previous?.revision) { "New library revision must differ from the current revision" }
@@ -111,20 +113,31 @@ class CarLibraryExporter(
                 "Offline media file is missing for ${item.song.id}"
             }
             val mediaSize = Files.size(mediaSource)
+            val mediaModifiedAtMs = Files.getLastModifiedTime(mediaSource).toMillis()
             item.resolved.contentLength?.let { expected ->
                 require(mediaSize == expected) {
                     "Offline media length mismatch for ${item.song.id}: expected=$expected actual=$mediaSize"
                 }
             }
 
-            val mediaSha = sha256(mediaSource)
             val mediaRelative = mediaRelativePath(item, mediaSource)
+            val previousSong = previousSongsById[item.song.id]
+            val reusableMediaSha =
+                previousSong
+                    ?.takeIf {
+                        it.mediaPath == mediaRelative &&
+                            it.fileSize == mediaSize &&
+                            it.sourceModifiedAtMs == mediaModifiedAtMs &&
+                            SHA256.matches(it.sha256)
+                    }
+                    ?.sha256
             val mediaCopy =
                 copyOrReuse(
                     source = mediaSource,
                     target = root.resolve(mediaRelative),
-                    expectedSize = mediaSize,
-                    expectedSha256 = mediaSha,
+                    expectedSourceSize = mediaSize,
+                    sourceModifiedAtMs = mediaModifiedAtMs,
+                    reusableSha256 = reusableMediaSha,
                     revision = revision,
                 )
             copiedFiles += if (mediaCopy.copied) 1 else 0
@@ -132,7 +145,14 @@ class CarLibraryExporter(
             updatedFiles += if (mediaCopy.updated) 1 else 0
             copiedBytes += mediaCopy.bytesCopied
 
-            val artwork = prepareArtwork(root, item, revision)
+            val artwork =
+                prepareArtwork(
+                    root = root,
+                    item = item,
+                    revision = revision,
+                    previousSong = previousSong,
+                    preparedFiles = preparedFiles,
+                )
             if (artwork != null) {
                 copiedFiles += if (artwork.copy.copied) 1 else 0
                 reusedFiles += if (artwork.copy.reused) 1 else 0
@@ -168,10 +188,12 @@ class CarLibraryExporter(
                     codecs = item.resolved.codecs,
                     bitrate = item.resolved.bitrate,
                     sampleRate = item.resolved.sampleRate,
-                    fileSize = mediaSize,
-                    sha256 = mediaSha,
+                    fileSize = mediaCopy.fileSize,
+                    sha256 = mediaCopy.sha256,
+                    sourceModifiedAtMs = mediaCopy.sourceModifiedAtMs,
                     artworkFileSize = artwork?.size,
                     artworkSha256 = artwork?.sha256,
+                    artworkSourceModifiedAtMs = artwork?.sourceModifiedAtMs,
                     artworkWidth = artwork?.width,
                     artworkHeight = artwork?.height,
                 )
@@ -272,6 +294,8 @@ class CarLibraryExporter(
         root: Path,
         item: PortableItem,
         revision: String,
+        previousSong: CarLibrarySong?,
+        preparedFiles: MutableMap<String, CopyOutcome>,
     ): PreparedArtwork? {
         val source =
             item.artworkPath
@@ -279,23 +303,40 @@ class CarLibraryExporter(
                 ?.takeIf { runCatching { Files.size(it) > 0L }.getOrDefault(false) }
                 ?: return null
 
-        val size = Files.size(source)
-        val digest = sha256(source)
+        val sourceModifiedAtMs = Files.getLastModifiedTime(source).toMillis()
         val stableKey = item.song.thumbnail.takeIf(String::isNotBlank) ?: item.song.id
         val relativePath = "$ARTWORK_ROOT/${sha256(stableKey.encodeToByteArray()).take(32)}.img"
+        val target = root.resolve(relativePath)
         val copy =
-            copyOrReuse(
-                source = source,
-                target = root.resolve(relativePath),
-                expectedSize = size,
-                expectedSha256 = digest,
-                revision = revision,
-            )
-        val dimensions = readImageDimensions(source)
+            preparedFiles[relativePath]
+                ?.copy(copied = false, reused = true, updated = false, bytesCopied = 0L)
+                ?: run {
+                    val sourceSize = Files.size(source)
+                    val reusableSha256 =
+                        previousSong
+                            ?.takeIf {
+                                it.artworkPath == relativePath &&
+                                    it.artworkFileSize == sourceSize &&
+                                    it.artworkSourceModifiedAtMs == sourceModifiedAtMs &&
+                                    it.artworkSha256?.let(SHA256::matches) == true
+                            }
+                            ?.artworkSha256
+                    copyOrReuse(
+                        source = source,
+                        target = target,
+                        expectedSourceSize = sourceSize,
+                        sourceModifiedAtMs = sourceModifiedAtMs,
+                        reusableSha256 = reusableSha256,
+                        revision = revision,
+                    ).also { preparedFiles[relativePath] = it }
+                }
+
+        val dimensions = readImageDimensions(target)
         return PreparedArtwork(
             relativePath = relativePath,
-            size = size,
-            sha256 = digest,
+            size = copy.fileSize,
+            sha256 = copy.sha256,
+            sourceModifiedAtMs = copy.sourceModifiedAtMs,
             width = dimensions?.first,
             height = dimensions?.second,
             copy = copy,
@@ -320,18 +361,24 @@ class CarLibraryExporter(
     private fun copyOrReuse(
         source: Path,
         target: Path,
-        expectedSize: Long,
-        expectedSha256: String,
+        expectedSourceSize: Long,
+        sourceModifiedAtMs: Long,
+        reusableSha256: String?,
         revision: String,
     ): CopyOutcome {
         Files.createDirectories(requireNotNull(target.parent))
         val existed = Files.isRegularFile(target)
         if (
             existed &&
-            Files.size(target) == expectedSize &&
-            sha256(target) == expectedSha256
+            reusableSha256 != null &&
+            Files.size(target) == expectedSourceSize
         ) {
-            return CopyOutcome(reused = true)
+            return CopyOutcome(
+                reused = true,
+                fileSize = expectedSourceSize,
+                sha256 = reusableSha256,
+                sourceModifiedAtMs = sourceModifiedAtMs,
+            )
         }
 
         val temporary =
@@ -339,16 +386,31 @@ class CarLibraryExporter(
                 target.fileName.toString() + ".part-" + safeToken(revision),
             )
         Files.deleteIfExists(temporary)
+        var copiedSize = 0L
+        val digest = MessageDigest.getInstance("SHA-256")
         try {
-            Files.copy(source, temporary, StandardCopyOption.REPLACE_EXISTING)
+            Files.newInputStream(source).use { input ->
+                Files.newOutputStream(
+                    temporary,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE,
+                ).use { output ->
+                    val buffer = ByteArray(COPY_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                        digest.update(buffer, 0, count)
+                        copiedSize = Math.addExact(copiedSize, count.toLong())
+                    }
+                }
+            }
+            require(copiedSize == expectedSourceSize) {
+                "Source file changed while exporting: ${target.fileName}"
+            }
             FileChannel.open(temporary, StandardOpenOption.WRITE).use { channel ->
                 channel.force(true)
-            }
-            require(Files.size(temporary) == expectedSize) {
-                "Copied file size mismatch: ${target.fileName}"
-            }
-            require(sha256(temporary) == expectedSha256) {
-                "Copied file hash mismatch: ${target.fileName}"
             }
             atomicReplace(temporary, target)
         } finally {
@@ -358,7 +420,10 @@ class CarLibraryExporter(
         return CopyOutcome(
             copied = true,
             updated = existed,
-            bytesCopied = expectedSize,
+            bytesCopied = copiedSize,
+            fileSize = copiedSize,
+            sha256 = digest.digest().toHex(),
+            sourceModifiedAtMs = sourceModifiedAtMs,
         )
     }
 
@@ -413,19 +478,6 @@ class CarLibraryExporter(
     private fun safeToken(value: String): String =
         sha256(value.encodeToByteArray()).take(16)
 
-    private fun sha256(path: Path): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        Files.newInputStream(path).use { input ->
-            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                if (count > 0) digest.update(buffer, 0, count)
-            }
-        }
-        return digest.digest().toHex()
-    }
-
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
 
@@ -449,6 +501,7 @@ class CarLibraryExporter(
         val relativePath: String,
         val size: Long,
         val sha256: String,
+        val sourceModifiedAtMs: Long,
         val width: Int?,
         val height: Int?,
         val copy: CopyOutcome,
@@ -459,6 +512,9 @@ class CarLibraryExporter(
         val reused: Boolean = false,
         val updated: Boolean = false,
         val bytesCopied: Long = 0L,
+        val fileSize: Long,
+        val sha256: String,
+        val sourceModifiedAtMs: Long,
     )
 
     private companion object {
@@ -466,6 +522,8 @@ class CarLibraryExporter(
         const val MEDIA_ROOT = "media"
         const val ARTWORK_ROOT = "artwork"
         const val PRODUCER_PRODUCT = "MetroList Windows"
+        const val COPY_BUFFER_SIZE = 1024 * 1024
         val SAFE_EXTENSION = Regex("^[a-z0-9]{1,10}$")
+        val SHA256 = Regex("^[0-9a-fA-F]{64}$")
     }
 }

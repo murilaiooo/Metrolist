@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +44,8 @@ import com.metrolist.music.car.library.CarLibrarySession
 import com.metrolist.music.car.library.CarLibraryStartupCoordinator
 import com.metrolist.music.car.library.CarUnifiedCatalog
 import com.metrolist.music.car.library.CarUnifiedSong
+import com.metrolist.music.car.loudness.CarLoudnessCoordinator
+import com.metrolist.music.car.loudness.CarLoudnessProgress
 import com.metrolist.music.car.preferences.CarDislikeLedgerStore
 import com.metrolist.music.car.preferences.CarDislikeRepository
 import com.metrolist.music.car.startup.CarStartupMilestone
@@ -83,6 +86,15 @@ fun CarApp(
         remember(carLibrarySession) {
             CarLibraryStartupCoordinator(carLibrarySession::reopen)
         }
+    val loudnessCoordinator =
+        remember(context, carLibrarySession) {
+            CarLoudnessCoordinator(context, carLibrarySession)
+        }
+    DisposableEffect(loudnessCoordinator) {
+        onDispose {
+            loudnessCoordinator.close()
+        }
+    }
     val provenanceStore =
         remember(context) {
             CarLegacyImportProvenanceStore(context)
@@ -98,6 +110,7 @@ fun CarApp(
                 descending = true,
             ).collectAsStateWithLifecycle(initialValue = emptyList())
     val carLibraryIndex by carLibrarySession.index.collectAsStateWithLifecycle()
+    val loudnessProgress by loudnessCoordinator.progress.collectAsStateWithLifecycle()
     val importStatus by importRepository.status.collectAsStateWithLifecycle()
     val dislikedSongIds by dislikeRepository.activeSongIds.collectAsStateWithLifecycle()
     var legacySongIds by remember { mutableStateOf(provenanceStore.importedSongIds()) }
@@ -120,6 +133,11 @@ fun CarApp(
     LaunchedEffect(importStatus) {
         provenanceStore.markImported(importRepository.completedSongIds())
         legacySongIds = provenanceStore.importedSongIds()
+    }
+    LaunchedEffect(carLibraryIndex) {
+        withContext(Dispatchers.IO) {
+            loudnessCoordinator.updateLibrary(carLibraryIndex)
+        }
     }
 
     val rawCatalog =
@@ -161,6 +179,8 @@ fun CarApp(
                 rawCatalog = rawCatalog,
                 dislikedSongIds = dislikedSongIds,
                 dislikeRepository = dislikeRepository,
+                loudnessCoordinator = loudnessCoordinator,
+                loudnessProgress = loudnessProgress,
             )
         }
     }
@@ -179,6 +199,8 @@ private fun CarShell(
     rawCatalog: List<CarUnifiedSong>,
     dislikedSongIds: Set<String>,
     dislikeRepository: CarDislikeRepository,
+    loudnessCoordinator: CarLoudnessCoordinator,
+    loudnessProgress: CarLoudnessProgress,
 ) {
     val navigation = remember { CarNavigationState(CarDestination.MUSIC) }
     val stack by navigation.stack.collectAsStateWithLifecycle()
@@ -195,6 +217,20 @@ private fun CarShell(
         val restored = connection?.mediaMetadata?.filterNotNull()?.first()
         if (restored != null && navigation.current == CarDestination.MUSIC) {
             navigation.navigate(CarDestination.NOW_PLAYING)
+        }
+    }
+    LaunchedEffect(connection, metadata) {
+        val controller = connection?.player
+        if (controller == null || controller.mediaItemCount <= 0) {
+            loudnessCoordinator.updatePriority(emptyList())
+        } else {
+            val start = controller.currentMediaItemIndex.coerceAtLeast(0)
+            val end = minOf(controller.mediaItemCount, start + 12)
+            loudnessCoordinator.updatePriority(
+                (start until end).map { index ->
+                    controller.getMediaItemAt(index).mediaId
+                },
+            )
         }
     }
 
@@ -257,6 +293,7 @@ private fun CarShell(
 
                     CarDestination.MORE ->
                         CarMoreScreen(
+                            connection = connection,
                             database = database,
                             downloadUtil = downloadUtil,
                             importRepository = importRepository,
@@ -265,6 +302,7 @@ private fun CarShell(
                             catalog = catalog,
                             viewport = viewport,
                             dislikedCount = dislikeRepository.records.collectAsStateWithLifecycle().value.size,
+                            loudnessProgress = loudnessProgress,
                             onOpenDisliked = {
                                 navigation.navigate(CarDestination.DISLIKED)
                             },

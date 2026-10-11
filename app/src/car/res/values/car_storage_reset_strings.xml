@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="car_storage_reset_title">Storage &amp; reset</string>
+    <string name="car_storage_reset_desc">Remove all music managed by MetroList and disconnect the selected Car Library. Files inside the external Car Library folder are left untouched.</string>
+    <string name="car_delete_all_music">Delete All Music</string>
+    <string name="car_delete_all_music_progress">Deleting…</string>
+    <string name="car_delete_all_music_title">Delete all music from MetroList?</string>
+    <string name="car_delete_all_music_message">This removes %1$d downloaded/imported track(s), clears MetroList audio caches, and disconnects the Car Library containing %2$d track(s). External Car Library files are not deleted. This cannot be undone for local app-managed files.</string>
+    <string name="car_delete_all_music_confirm">Delete all</string>
+    <string name="car_delete_all_music_cancel">Cancel</string>
+    <string name="car_delete_all_music_done">Removed %1$d local track(s). The Car Library was disconnected and its external files were kept.</string>
+    <string name="car_delete_all_music_failed">Could not finish deleting all music: %1$s</string>
+</resources>

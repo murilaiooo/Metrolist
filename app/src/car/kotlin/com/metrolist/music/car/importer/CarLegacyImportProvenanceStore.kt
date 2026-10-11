@@ -21,6 +21,10 @@ class CarLegacyImportProvenanceStore(
             .apply()
     }
 
+    fun clear() {
+        preferences.edit().remove(KEY_IMPORTED_IDS).apply()
+    }
+
     private companion object {
         const val PREFS_NAME = "car-legacy-provenance"
         const val KEY_IMPORTED_IDS = "imported-song-ids"

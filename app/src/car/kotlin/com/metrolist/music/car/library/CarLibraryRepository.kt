@@ -10,6 +10,12 @@ class CarLibraryRepository(
 
     fun index(): CarLibraryIndex? = activeIndex
 
+    fun disconnect() {
+        activeAccess = null
+        activeIndex = null
+        locationStore.clear()
+    }
+
     fun open(access: CarLibraryTreeAccess): CarLibraryOpenResult {
         val raw =
             runCatching { access.readText(MANIFEST_PATH) }
@@ -135,59 +141,40 @@ class CarLibraryRepository(
                     reason = CarLibraryUnavailableReason.UNKNOWN_TRACK,
                 )
 
-        val exists =
-            runCatching { access.exists(song.mediaPath) }
-                .getOrDefault(false)
-        if (!exists) {
-            return CarLibraryTrackAvailability.Unavailable(
-                songId = songId,
-                reason = CarLibraryUnavailableReason.MEDIA_MISSING,
-            )
-        }
-
-        val observedMediaSize =
-            runCatching { access.size(song.mediaPath) }
-                .getOrNull()
-        if (observedMediaSize != null && observedMediaSize != song.fileSize) {
-            return CarLibraryTrackAvailability.Unavailable(
-                songId = songId,
-                reason = CarLibraryUnavailableReason.MEDIA_CORRUPT,
-            )
-        }
-
-        val mediaLocator =
-            runCatching { access.locator(song.mediaPath) }
+        val mediaEntry =
+            runCatching { access.entry(song.mediaPath) }
                 .getOrElse {
                     return CarLibraryTrackAvailability.Unavailable(
                         songId = songId,
                         reason = CarLibraryUnavailableReason.ACCESS_LOST,
                     )
                 }
+                ?: return CarLibraryTrackAvailability.Unavailable(
+                    songId = songId,
+                    reason = CarLibraryUnavailableReason.MEDIA_MISSING,
+                )
+        if (mediaEntry.size != null && mediaEntry.size != song.fileSize) {
+            return CarLibraryTrackAvailability.Unavailable(
+                songId = songId,
+                reason = CarLibraryUnavailableReason.MEDIA_CORRUPT,
+            )
+        }
 
         val artworkLocator =
             song.artworkPath
-                ?.takeIf { artworkPath ->
-                    val exists =
-                        runCatching { access.exists(artworkPath) }
-                            .getOrDefault(false)
-                    if (!exists) {
-                        false
-                    } else {
-                        val expectedSize = song.artworkFileSize
-                        val observedSize =
-                            runCatching { access.size(artworkPath) }
-                                .getOrNull()
-                        expectedSize == null || observedSize == null || observedSize == expectedSize
-                    }
-                }
                 ?.let { artworkPath ->
-                    runCatching { access.locator(artworkPath) }
+                    runCatching { access.entry(artworkPath) }
                         .getOrNull()
+                        ?.takeIf { entry ->
+                            val expectedSize = song.artworkFileSize
+                            expectedSize == null || entry.size == null || entry.size == expectedSize
+                        }
+                        ?.locator
                 }
 
         return CarLibraryTrackAvailability.Available(
             song = song,
-            locator = mediaLocator,
+            locator = mediaEntry.locator,
             artworkLocator = artworkLocator,
         )
     }

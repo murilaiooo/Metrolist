@@ -67,12 +67,18 @@ class CarLibraryValidator(
                 }
             }
             if (song.fileSize < 0L) errors += "Invalid media file size: ${song.id}"
+            if (song.sourceModifiedAtMs != null && song.sourceModifiedAtMs < 0L) {
+                errors += "Invalid media source timestamp: ${song.id}"
+            }
             if (!SHA256.matches(song.sha256)) errors += "Invalid media hash: ${song.id}"
             if (song.duration != null && song.duration < 0) errors += "Invalid duration: ${song.id}"
             if (song.bitrate != null && song.bitrate <= 0) errors += "Invalid bitrate: ${song.id}"
             if (song.sampleRate != null && song.sampleRate <= 0) errors += "Invalid sample rate: ${song.id}"
             if (song.artworkFileSize != null && song.artworkFileSize < 0L) {
                 errors += "Invalid artwork file size: ${song.id}"
+            }
+            if (song.artworkSourceModifiedAtMs != null && song.artworkSourceModifiedAtMs < 0L) {
+                errors += "Invalid artwork source timestamp: ${song.id}"
             }
             if (song.artworkSha256 != null && !SHA256.matches(song.artworkSha256)) {
                 errors += "Invalid artwork hash: ${song.id}"

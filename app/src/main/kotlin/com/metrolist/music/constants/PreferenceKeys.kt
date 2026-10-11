@@ -127,6 +127,7 @@ val ShuffleModeKey = booleanPreferencesKey("shuffleMode")
 val SkipSilenceKey = booleanPreferencesKey("skipSilence")
 val SkipSilenceInstantKey = booleanPreferencesKey("skipSilenceInstant")
 val AudioNormalizationKey = booleanPreferencesKey("audioNormalization")
+val CarLoudnessModeKey = stringPreferencesKey("carLoudnessMode")
 
 val LoudnessLevelKey = stringPreferencesKey("loudnessLevel")
 

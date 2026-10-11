@@ -1,5 +1,67 @@
 # MetroList Car Release History
 
+## 0.4.2 — 2026-09-29
+
+Status: production-signed final R8 release APK packaged and independently verified; physical-car validation is intentionally left to the user.
+
+Release hardening:
+- Amazon Corretto 21 is the release JDK for this host;
+- release pipeline runs one Gradle build at a time with `--no-parallel`, `--max-workers=1`, in-process Kotlin, and KSP incremental disabled;
+- Car release uses full R8 code shrinking, optimization, obfuscation, and optimized resource shrinking;
+- global `-dontobfuscate` was removed from the shared rules; FOSS/GMS/Izzy retain it through flavor-scoped `proguard-reproducible-rules.pro`, while Car receives full obfuscation;
+- the effective Car R8 configuration contains zero `-dontobfuscate` directives.
+
+Verification:
+- `:app:testCarDebugUnitTest :app:assembleCarRelease`: `BUILD SUCCESSFUL`;
+- Car unit suite: 283 tests, 0 failures, 0 errors, 1 assumption-skipped real-backup contract test because `METROLIST_CAR_BACKUP_PATH` was not set;
+- R8 task `minifyCarReleaseWithR8`: PASS;
+- optimized resource shrinking `convertShrunkResourcesToBinaryCarRelease`: PASS;
+- R8 mapping/configuration/usage/resource reports generated;
+- `git diff --check`: PASS (line-ending warnings only);
+- applicationId `com.metrolist.music.car`;
+- versionName `0.4.2`, versionCode `4002`;
+- manifest `debuggable=false`;
+- APK Signature Scheme v2: PASS;
+- signer certificate SHA-256: `1323debbc967612f305d55b8c7261d0b821b56ff02967ba18d07d1e403bd0e43`;
+- connected physical Xiaomi device was intentionally left untouched;
+- exact final APK installed on `MetroList_Car_API29`: PASS;
+- cold launch of `com.metrolist.music.car/com.metrolist.music.CarMainActivity`: PASS in 708 ms;
+- app process remained alive after launch and final logcat check found no `FATAL EXCEPTION` or app ANR.
+
+Final artifact:
+`app/build/outputs/apk/car/release/app-car-release.apk`
+Size: 23,192,051 bytes
+SHA-256: `6e52102691daf1dbd932fe1a1c9fcab027d9761c3ab2f57796b6cc413ccb6f39`
+Convenience copies:
+- `D:\ESTE COMPUTADOR\Desktop\MetroList-Car-0.4.2.apk`
+- `D:\ESTE COMPUTADOR\Desktop\MetroList-Car-0.4.2-FINAL.apk`
+
+R8 release diagnostics are archived locally under `.superpowers/release-artifacts/car-0.4.2-final-r8/`, including the exact APK, `mapping.txt`, effective configuration, seeds, usage, and resource report. Mapping SHA-256: `a9c0da3d3b5e897ff580f708839f31cb2663a41c7ca4bbfaa9e1d7410ede3a6f`.
+
+
+## 0.4.1 — 2026-09-28
+
+Status: production-signed final APK packaged, signature-verified, installed over 0.4.0 with app data preserved, and launched; Car Library transfer/open validation intentionally left to the user.
+
+Changes:
+- optimized direct Car Library file resolution so SAF/local access returns locator + size in one lookup rather than repeated exists/size/locator traversals;
+- extended the paired Car Library manifest with optional source modification fingerprints used by Windows incremental export while preserving backward parsing of older manifests;
+- kept direct folder playback as the primary fast workflow: Android reads `library.json` and plays media in place without duplicating the library into app-private storage;
+- clarified in-app wording that `.metrolistbackup` import is the slower legacy compatibility path.
+
+Verification:
+- production `:app:assembleCarRelease` with R8/minify, resource shrink, and release signing: PASS;
+- no Car unit/functional import tests were run in this closeout at the user's request;
+- signed release install with `adb install -r`: PASS, preserving existing app data;
+- release package identity: applicationId `com.metrolist.music.car`, versionName `0.4.1`, versionCode `4001`;
+- exact release APK launch of `com.metrolist.music.CarMainActivity`: PASS;
+- APK Signature Scheme v2 signer certificate SHA-256: `1323debbc967612f305d55b8c7261d0b821b56ff02967ba18d07d1e403bd0e43`.
+
+Artifact:
+`app/build/outputs/apk/car/release/app-car-release.apk`
+Size: 23,247,835 bytes
+SHA-256: `abba5adcbdc95d09fa5a0a9cf003ab17d78dd46d4f43ab0ca2143d19d30473dc`
+
 ## 0.4.0 — 2026-09-28
 
 Status: production-signed release APK built, signature-verified, installed, and AVD-smoked; source commit authorized for local `main`, with no push/merge authorization.

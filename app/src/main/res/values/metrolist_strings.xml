@@ -73,10 +73,10 @@
     <string name="car_library">Library</string>
     <string name="car_search">Search</string>
     <string name="car_more">More</string>
-    <string name="car_library_description">Play directly from a MetroList Car Library folder stored on this head unit.</string>
+    <string name="car_library_description">Fast path: open the MetroList Car Library folder and play directly from it. No media import or duplicate copy is needed.</string>
     <string name="car_library_loading">Opening Car Library…</string>
     <string name="car_library_no_folder">No Car Library selected</string>
-    <string name="car_library_no_folder_desc">Copy the exported folder into the head unit, then select it here. MetroList reads the media in place without importing or duplicating it.</string>
+    <string name="car_library_no_folder_desc">Export or update the Car Library on Windows, copy that folder to the head unit, then select it here. MetroList reads library.json once and uses the media in place.</string>
     <string name="car_library_open_folder">Open Car Library Folder</string>
     <string name="car_library_active">Car Library ready</string>
     <string name="car_library_summary">%1$d tracks · %2$d playlists</string>
@@ -87,8 +87,8 @@
     <string name="car_library_invalid">Invalid Car Library</string>
     <string name="car_library_reselect">Reselect Folder</string>
     <string name="car_legacy_backup">Legacy Windows backup</string>
-    <string name="car_legacy_backup_desc">Older .metrolistbackup files are still supported as a secondary compatibility path.</string>
-    <string name="car_import_legacy_backup">Import Windows Backup</string>
+    <string name="car_legacy_backup_desc">Older .metrolistbackup files remain supported as a slower compatibility path. Car Library folders are the recommended transfer format.</string>
+    <string name="car_import_legacy_backup">Import Legacy Backup</string>
     <string name="car_legacy_import_started">Legacy backup import started. Progress is shown in the system notification.</string>
     <string name="car_library_playlists">Playlists</string>
     <string name="car_library_tracks">Tracks</string>

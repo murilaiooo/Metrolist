@@ -50,8 +50,10 @@ data class CarLibrarySong(
     val sampleRate: Int? = null,
     val fileSize: Long,
     val sha256: String,
+    val sourceModifiedAtMs: Long? = null,
     val artworkFileSize: Long? = null,
     val artworkSha256: String? = null,
+    val artworkSourceModifiedAtMs: Long? = null,
     val artworkWidth: Int? = null,
     val artworkHeight: Int? = null,
 )

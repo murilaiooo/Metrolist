@@ -14,6 +14,12 @@ import kotlin.math.pow
 class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
     private var encoding = C.ENCODING_INVALID
     private var bytesPerSample = 0
+    private var sampleRate = 0
+    private var channelCount = 0
+    private var currentLinearGain = 1.0
+    private var rampTargetLinearGain = 1.0
+    private var rampStep = 0.0
+    private var rampSamplesRemaining = 0
 
     @Volatile
     var signalLevel: Float = 0f
@@ -51,6 +57,8 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         encoding = inputAudioFormat.encoding
+        sampleRate = inputAudioFormat.sampleRate
+        channelCount = inputAudioFormat.channelCount
         bytesPerSample =
             when (encoding) {
                 C.ENCODING_PCM_16BIT -> 2
@@ -69,7 +77,7 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
         if (!inputBuffer.hasRemaining()) return
 
         val gain = currentGain
-        val applyGain = enabled && gain.targetGainMb != 0
+        val targetLinearGain = if (enabled) gain.linearGain else 1.0
         val sampleCount = inputBuffer.remaining() / bytesPerSample
         val output = replaceOutputBuffer(sampleCount * bytesPerSample)
         val trackSignal = signalTrackingEnabled
@@ -82,18 +90,15 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
             C.ENCODING_PCM_16BIT ->
                 repeat(sampleCount) {
                     val sample = inputBuffer.getShort()
+                    val sampleGain = nextLinearGain(targetLinearGain)
                     if (trackSignal) {
                         peakLevel = maxOf(peakLevel, abs(sample.toInt()) / 32768f)
                     }
                     output.putShort(
-                        if (applyGain) {
-                            (sample * gain.linearGain)
-                                .coerceIn(-32768.0, 32767.0)
-                                .toInt()
-                                .toShort()
-                        } else {
-                            sample
-                        },
+                        (sample * sampleGain)
+                            .coerceIn(-32768.0, 32767.0)
+                            .toInt()
+                            .toShort(),
                     )
                 }
 
@@ -109,14 +114,11 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
                             (abs(sample.toLong()).coerceAtMost(8_388_608L) / 8_388_608f),
                         )
                     }
+                    val sampleGain = nextLinearGain(targetLinearGain)
                     val processed =
-                        if (applyGain) {
-                            (sample * gain.linearGain)
-                                .coerceIn(-8388608.0, 8388607.0)
-                                .toInt()
-                        } else {
-                            sample
-                        }
+                        (sample * sampleGain)
+                            .coerceIn(-8388608.0, 8388607.0)
+                            .toInt()
                     output.put((processed and 0xFF).toByte())
                     output.put(((processed shr 8) and 0xFF).toByte())
                     output.put(((processed shr 16) and 0xFF).toByte())
@@ -131,15 +133,12 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
                             (abs(sample.toDouble()) / 2_147_483_648.0).toFloat(),
                         )
                     }
+                    val sampleGain = nextLinearGain(targetLinearGain)
                     output.putInt(
-                        if (applyGain) {
-                            (sample * gain.linearGain)
-                                .coerceIn(-2147483648.0, 2147483647.0)
-                                .toLong()
-                                .toInt()
-                        } else {
-                            sample
-                        },
+                        (sample * sampleGain)
+                            .coerceIn(-2147483648.0, 2147483647.0)
+                            .toLong()
+                            .toInt(),
                     )
                 }
 
@@ -149,12 +148,9 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
                     if (trackSignal) {
                         peakLevel = maxOf(peakLevel, abs(sample).coerceAtMost(1f))
                     }
+                    val sampleGain = nextLinearGain(targetLinearGain)
                     output.putFloat(
-                        if (applyGain) {
-                            (sample * gain.linearGain.toFloat()).coerceIn(-1.0f, 1.0f)
-                        } else {
-                            sample
-                        },
+                        (sample * sampleGain.toFloat()).coerceIn(-1.0f, 1.0f),
                     )
                 }
         }
@@ -173,13 +169,42 @@ class VolumeNormalizationAudioProcessor : BaseAudioProcessor() {
         output.flip()
     }
 
+    private fun nextLinearGain(targetLinearGain: Double): Double {
+        if (abs(targetLinearGain - rampTargetLinearGain) > GAIN_EPSILON) {
+            rampTargetLinearGain = targetLinearGain
+            rampSamplesRemaining =
+                ((sampleRate * channelCount * GAIN_RAMP_MS) / 1000)
+                    .coerceAtLeast(1)
+            rampStep =
+                (rampTargetLinearGain - currentLinearGain) /
+                    rampSamplesRemaining.toDouble()
+        }
+
+        if (rampSamplesRemaining > 0) {
+            currentLinearGain += rampStep
+            rampSamplesRemaining--
+            if (rampSamplesRemaining == 0) {
+                currentLinearGain = rampTargetLinearGain
+            }
+        }
+        return currentLinearGain
+    }
+
     override fun onReset() {
         encoding = C.ENCODING_INVALID
         bytesPerSample = 0
+        sampleRate = 0
+        channelCount = 0
+        currentLinearGain = 1.0
+        rampTargetLinearGain = 1.0
+        rampStep = 0.0
+        rampSamplesRemaining = 0
         signalLevel = 0f
     }
 
     private companion object {
         const val TAG = "VolumeNormalizationProcessor"
+        const val GAIN_RAMP_MS = 15
+        const val GAIN_EPSILON = 1e-9
     }
 }

@@ -77,6 +77,7 @@ android {
         create("foss") {
             dimension = "variant"
             isDefault = true
+            proguardFile("proguard-reproducible-rules.pro")
             buildConfigField("Boolean", "CAST_AVAILABLE", "false")
             buildConfigField("Boolean", "UPDATER_AVAILABLE", "true")
         }
@@ -84,6 +85,7 @@ android {
         // GMS - Updater and gcast
         create("gms") {
             dimension = "variant"
+            proguardFile("proguard-reproducible-rules.pro")
             buildConfigField("Boolean", "CAST_AVAILABLE", "true")
             buildConfigField("Boolean", "UPDATER_AVAILABLE", "true")
         }
@@ -91,6 +93,7 @@ android {
         // IzzyOnDroid - no gcast, no updater - the ONLY F-droid compliant build
         create("izzy") {
             dimension = "variant"
+            proguardFile("proguard-reproducible-rules.pro")
             buildConfigField("Boolean", "CAST_AVAILABLE", "false")
             buildConfigField("Boolean", "UPDATER_AVAILABLE", "false")
         }

@@ -1,5 +1,28 @@
 # MetroList Windows Release History
 
+## 0.3.2 — 2026-09-28
+
+Status: final MSI packaged, installed over the existing Windows app, and launched; Car Library export/import functional validation intentionally left to the user.
+
+Changes:
+- optimized Car Library export so new or changed media/artwork is copied and SHA-256 hashed in the same streaming pass instead of hash → copy → hash;
+- added incremental source fingerprints (size + last-modified timestamp + prior manifest hash) so unchanged files can be reused without rereading gigabytes of payload;
+- serialized concurrent artwork-cache refreshes per source URL and made exported artwork metadata come from the exact bytes promoted to the destination, fixing the observed copied-artwork hash race;
+- deduplicates shared artwork work inside one export and preserves atomic library.json publication only after referenced payloads are ready;
+- clarified `Export / Update Car Library` as the recommended fast path and relabeled `.metrolistbackup` as the legacy compatibility path.
+
+Verification:
+- `git diff --check`: PASS before packaging;
+- Windows 0.3.2 MSI package build: PASS;
+- MSI install/upgrade: exit 0;
+- installed Windows registration reports version 0.3.2 and the app was launched;
+- per user request, no functional Car Library export/import test was run by the assistant.
+
+Artifact:
+`desktop-app/build/compose/binaries/main/msi/MetroListWindows-0.3.2.msi`
+Size: 224,896,004 bytes
+SHA-256: `d7a114238362de055dadfdab5a63b9961dbfa226053f79da08d71b20d7619dcd`
+
 ## 0.3.1 — 2026-09-27
 
 Status: packaged; automated pre-physical review complete.

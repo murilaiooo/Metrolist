@@ -107,6 +107,12 @@ class CarImportRepository @Inject constructor(
         _status.value = initialStatus()
     }
 
+    fun reset() {
+        journalStore.clear()
+        preferences.edit().remove(KEY_SOURCE_URI).apply()
+        _status.value = CarImportStatus.Idle
+    }
+
     private fun initialStatus(): CarImportStatus {
         val journal =
             runCatching { journalStore.load() }

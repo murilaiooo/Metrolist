@@ -69,6 +69,12 @@ class CarLibrarySession internal constructor(
         return result
     }
 
+    fun disconnect() {
+        repository.disconnect()
+        _index.value = null
+        _operation.value = CarOperationState.Idle
+    }
+
     suspend fun refresh(): CarLibraryRefreshResult {
         _operation.value =
             CarOperationState.Running(

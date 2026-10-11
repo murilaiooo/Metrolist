@@ -81,3 +81,33 @@ Infrastructure note:
 The user authorized one local commit of the approved 0.4.0 release state after fresh verification. The production keystore, signing credentials, generated APKs, local backup, and JVM diagnostics must remain excluded from the commit.
 
 Do not push or merge unless the user explicitly authorizes that separate action.
+
+
+## 2026-09-28 — Release process lessons codified
+
+A permanent release playbook was added at:
+`docs/superpowers/releases/car-release-playbook.md`
+
+Important operational rule from this incident:
+- never allow concurrent Gradle builds in this repo;
+- after any interrupted/crashed Gradle/D8/R8 run, verify the full process tree is gone before retrying;
+- clean generated `app/build` intermediates when a crash may have left inconsistent dex/proto outputs;
+- use absolute paths with Remote Desktop Commander;
+- do not report a release as ready until an APK exists and package/version/signature/hash have all been verified.
+
+These rules are now part of the project handoff and must be followed in future MetroList release work.
+
+
+## 2026-09-28 — Release build lessons made persistent
+
+The release incident exposed repeatable host/toolchain failure modes. They are now documented in:
+- `docs/superpowers/releases/car-release-playbook.md`
+
+The reusable signing/build script was upgraded:
+- `.superpowers/signing/build-car-release.ps1`
+- refuses concurrent MetroList Gradle builds;
+- supports clean/no-cache/full-classpath/interpreter/no-minify modes;
+- always restores temporary Gradle changes in `finally`;
+- keeps the production signing path unchanged.
+
+Future Car release work must read and follow the release playbook before attempting retries. Do not repeat deprecated `android.enableDexingArtifactTransform=false`; use `android.useFullClasspathForDexingTransform=true` when the non-minified dex pipeline requires a full classpath.

@@ -5,14 +5,6 @@
 # For more details, see
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
-## Reproducible Build Support
-# Disable obfuscation to ensure deterministic R8 output across different build environments.
-# Without this, R8 assigns short names (e.g. `j`, `k`) to renamed classes in a non-deterministic
-# order, causing byte-for-byte differences between builds. This is required for F-Droid / IzzyOnDroid
-# Reproducible Build verification. Code shrinking (dead code removal) remains fully enabled.
-# Since Metrolist is fully open-source, obfuscation provides no meaningful security benefit.
--dontobfuscate
-
 # WebView JavaScript interfaces
 -keepclassmembers class com.metrolist.music.utils.potoken.PoTokenWebView {
     @android.webkit.JavascriptInterface public *;
